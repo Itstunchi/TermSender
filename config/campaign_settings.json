@@ -1,16 +1,22 @@
+
 {
   "default_settings": {
     "send_mode": "dry_run",
     "delay_between_emails": 1,
     "batch_size": 50,
     "max_retries": 3,
-    "enable_tracking": false,
-    "auto_unsubscribe": true
+    "enable_tracking": true,
+    "auto_unsubscribe": true,
+    "rotation_mode": "email_count",
+    "rotation_value": 10,
+    "enable_analytics": true,
+    "rate_limit_per_minute": 60,
+    "rate_limit_per_hour": 1000
   },
   "campaigns": {
     "welcome_campaign": {
       "name": "New Customer Welcome Series",
-      "smtp_server": "Gmail SMTP",
+      "smtp_server": "all",
       "email_list": "customers",
       "template": "welcome_email",
       "schedule": {
@@ -19,17 +25,21 @@
       },
       "settings": {
         "send_mode": "live",
-        "delay_between_emails": 2
+        "delay_between_emails": 2,
+        "rotation_mode": "email_count",
+        "rotation_value": 15,
+        "enable_analytics": true
       }
     },
     "product_launch": {
       "name": "Product Launch Campaign", 
-      "smtp_server": "Gmail SMTP",
+      "smtp_server": "all",
       "email_list": "prospects",
       "template": "product_announcement",
       "template_variables": {
-        "product_name": "TermSender Pro v2.0",
-        "company_name": "Your Company"
+        "product_name": "TermSender Pro v3.0",
+        "company_name": "Your Company",
+        "launch_date": "2025-01-01"
       },
       "schedule": {
         "type": "scheduled",
@@ -37,7 +47,25 @@
       },
       "settings": {
         "send_mode": "dry_run",
-        "delay_between_emails": 5
+        "delay_between_emails": 5,
+        "rotation_mode": "time_based",
+        "rotation_value": 20,
+        "enable_analytics": true
+      }
+    },
+    "newsletter_monthly": {
+      "name": "Monthly Newsletter Distribution",
+      "smtp_server": "all",
+      "email_list": "subscribers",
+      "template": "newsletter_template",
+      "settings": {
+        "send_mode": "live",
+        "delay_between_emails": 3,
+        "rotation_mode": "email_count",
+        "rotation_value": 25,
+        "batch_size": 100,
+        "enable_analytics": true,
+        "rate_limit_per_hour": 800
       }
     }
   }

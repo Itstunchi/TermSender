@@ -1,22 +1,25 @@
 
 #!/usr/bin/env python3
 """
-TermSender - Professional Terminal Email Sender Tool
-A Python-based CLI email sender with interactive interface for ethical bulk email campaigns.
+TermSender Pro - Enhanced CLI with SMTP Rotation & Advanced Analytics
+Advanced terminal email sender with sophisticated campaign management
 """
 
 import smtplib
 import os
 import json
 import csv
+import time
+import threading
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
-from typing import List, Dict, Optional
-import time
-from datetime import datetime
+from typing import List, Dict, Optional, Any
+from dataclasses import dataclass
+import random
 
 import typer
 from rich.console import Console
@@ -28,577 +31,718 @@ from rich.text import Text
 from rich.layout import Layout
 from rich.live import Live
 from rich.align import Align
+from rich import box
 import pandas as pd
 from email_validator import validate_email, EmailNotValidError
 
 # Initialize Typer app and Rich console
 app = typer.Typer(
-    name="TermSender",
-    help="Professional terminal email sender tool for ethical bulk email campaigns",
+    name="TermSender Pro",
+    help="Professional terminal email sender with SMTP rotation and advanced analytics",
     rich_markup_mode="rich"
 )
 console = Console()
 
-# Configuration file path
-CONFIG_FILE = Path("termsender_config.json")
+# Configuration directories
+CONFIG_DIR = Path("config")
 LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
+ANALYTICS_DIR = Path("analytics")
 
-class EmailValidator:
-    """Email validation utility class"""
-    
-    @staticmethod
-    def is_valid_email(email: str) -> bool:
-        """Validate email address using email-validator library"""
-        try:
-            validate_email(email)
-            return True
-        except EmailNotValidError:
-            return False
-    
-    @staticmethod
-    def clean_email_list(emails: List[str]) -> List[str]:
-        """Clean and deduplicate email list"""
-        valid_emails = []
-        seen = set()
-        
-        for email in emails:
-            email = email.strip().lower()
-            if email and EmailValidator.is_valid_email(email) and email not in seen:
-                valid_emails.append(email)
-                seen.add(email)
-        
-        return valid_emails
+# Create directories
+for directory in [CONFIG_DIR, LOGS_DIR, ANALYTICS_DIR]:
+    directory.mkdir(exist_ok=True)
 
-class SMTPConfig:
-    """SMTP Configuration management"""
+@dataclass
+class SMTPServer:
+    """SMTP Server configuration"""
+    name: str
+    host: str
+    port: int
+    username: str
+    password: str
+    sender_email: str
+    use_tls: bool = True
+    enabled: bool = True
+    max_emails_per_hour: int = 300
+    current_emails_sent: int = 0
+    last_reset_time: datetime = None
+    connection_status: str = "unknown"
     
-    def __init__(self):
-        self.host: str = ""
-        self.port: int = 587
-        self.username: str = ""
-        self.password: str = ""
-        self.use_tls: bool = True
-        self.sender_email: str = ""
+    def __post_init__(self):
+        if self.last_reset_time is None:
+            self.last_reset_time = datetime.now()
+
+@dataclass
+class CampaignStats:
+    """Campaign statistics tracking"""
+    campaign_id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    total_recipients: int = 0
+    emails_sent: int = 0
+    emails_failed: int = 0
+    smtp_rotations: int = 0
+    current_smtp: str = ""
+    failed_recipients: List[Dict] = None
+    smtp_usage: Dict[str, int] = None
     
-    def configure_interactive(self) -> bool:
-        """Interactive SMTP configuration with enhanced UI"""
-        layout = Layout()
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="body")
-        )
+    def __post_init__(self):
+        if self.failed_recipients is None:
+            self.failed_recipients = []
+        if self.smtp_usage is None:
+            self.smtp_usage = {}
+
+class SMTPRotationManager:
+    """Advanced SMTP rotation and management"""
+    
+    def __init__(self, smtp_servers: List[SMTPServer], rotation_mode: str = "email_count", rotation_value: int = 10):
+        self.smtp_servers = [server for server in smtp_servers if server.enabled]
+        self.rotation_mode = rotation_mode  # "email_count" or "time_based"
+        self.rotation_value = rotation_value  # emails per rotation or seconds per rotation
+        self.current_server_index = 0
+        self.emails_sent_current_server = 0
+        self.server_start_time = datetime.now()
+        self.server_connections = {}
         
-        header_text = Text("🚀 TermSender Pro - SMTP Configuration", style="bold cyan", justify="center")
-        layout["header"].update(Panel(header_text, style="cyan"))
-        
-        console.print(Panel(
-            "[bold cyan]SMTP Server Configuration[/bold cyan]\n"
-            "Enter your email server details. For Gmail, use app passwords.\n"
-            "For other providers, check their SMTP settings.\n\n"
-            "[yellow]💡 Tips:[/yellow]\n"
-            "• Gmail: smtp.gmail.com:587 with app password\n"
-            "• Outlook: smtp-mail.outlook.com:587\n"
-            "• Yahoo: smtp.mail.yahoo.com:587",
-            title="📧 Email Server Setup",
-            border_style="blue"
-        ))
-        
-        # SMTP Host with suggestions
-        console.print("[dim]Common hosts: gmail.com, outlook.com, yahoo.com[/dim]")
-        self.host = Prompt.ask(
-            "[bold]SMTP Host[/bold]",
-            default="smtp.gmail.com"
-        )
-        
-        # SMTP Port with validation
-        self.port = IntPrompt.ask(
-            "[bold]SMTP Port[/bold]",
-            default=587
-        )
-        
-        # Username
-        self.username = Prompt.ask("[bold]SMTP Username/Email[/bold]")
-        
-        # Password with security notice
-        console.print("[yellow]⚠️  Your password is secure and won't be saved to disk[/yellow]")
-        self.password = Prompt.ask(
-            "[bold]SMTP Password[/bold]",
-            password=True
-        )
-        
-        # TLS
-        self.use_tls = Confirm.ask(
-            "[bold]Use TLS encryption?[/bold]",
-            default=True
-        )
-        
-        # Sender email
-        self.sender_email = Prompt.ask(
-            "[bold]Sender Email Address[/bold]",
-            default=self.username
-        )
-        
-        # Validate sender email
-        if not EmailValidator.is_valid_email(self.sender_email):
-            console.print("[red]❌ Invalid sender email address![/red]")
+    def get_current_server(self) -> SMTPServer:
+        """Get the currently active SMTP server"""
+        if not self.smtp_servers:
+            raise Exception("No enabled SMTP servers available")
+        return self.smtp_servers[self.current_server_index]
+    
+    def should_rotate(self) -> bool:
+        """Check if it's time to rotate to next SMTP server"""
+        if len(self.smtp_servers) <= 1:
             return False
-        
-        # Test connection with enhanced feedback
-        return self.test_connection()
+            
+        if self.rotation_mode == "email_count":
+            return self.emails_sent_current_server >= self.rotation_value
+        elif self.rotation_mode == "time_based":
+            elapsed = (datetime.now() - self.server_start_time).total_seconds()
+            return elapsed >= self.rotation_value
+        return False
     
-    def test_connection(self) -> bool:
-        """Test SMTP connection with progress indicator"""
-        with console.status("[yellow]Testing SMTP connection...", spinner="dots"):
+    def rotate_server(self) -> SMTPServer:
+        """Rotate to the next SMTP server"""
+        self.current_server_index = (self.current_server_index + 1) % len(self.smtp_servers)
+        self.emails_sent_current_server = 0
+        self.server_start_time = datetime.now()
+        
+        # Close current connection if exists
+        current_server = self.get_current_server()
+        if current_server.name in self.server_connections:
             try:
-                time.sleep(0.5)  # Brief pause for UX
-                server = smtplib.SMTP(self.host, self.port)
-                if self.use_tls:
-                    server.starttls()
-                server.login(self.username, self.password)
-                server.quit()
-                console.print("✅ [green]SMTP connection successful![/green]")
-                return True
+                self.server_connections[current_server.name].quit()
+            except:
+                pass
+            del self.server_connections[current_server.name]
+        
+        return current_server
+    
+    def get_server_connection(self, server: SMTPServer):
+        """Get or create SMTP connection for server"""
+        if server.name not in self.server_connections:
+            try:
+                connection = smtplib.SMTP(server.host, server.port)
+                if server.use_tls:
+                    connection.starttls()
+                connection.login(server.username, server.password)
+                self.server_connections[server.name] = connection
+                server.connection_status = "connected"
             except Exception as e:
-                console.print(f"❌ [red]SMTP connection failed: {e}[/red]")
-                return False
+                server.connection_status = f"failed: {str(e)}"
+                raise e
+        
+        return self.server_connections[server.name]
     
-    def to_dict(self) -> Dict:
-        """Convert to dictionary for saving"""
-        return {
-            "host": self.host,
-            "port": self.port,
-            "username": self.username,
-            "use_tls": self.use_tls,
-            "sender_email": self.sender_email
-            # Note: Password not saved for security
+    def record_email_sent(self):
+        """Record that an email was sent"""
+        self.emails_sent_current_server += 1
+        current_server = self.get_current_server()
+        current_server.current_emails_sent += 1
+    
+    def cleanup_connections(self):
+        """Clean up all SMTP connections"""
+        for connection in self.server_connections.values():
+            try:
+                connection.quit()
+            except:
+                pass
+        self.server_connections.clear()
+
+class AnalyticsManager:
+    """Advanced analytics and reporting"""
+    
+    def __init__(self):
+        self.analytics_file = ANALYTICS_DIR / "campaign_analytics.json"
+        self.current_stats: Optional[CampaignStats] = None
+    
+    def start_campaign(self, campaign_id: str, total_recipients: int) -> CampaignStats:
+        """Start tracking a new campaign"""
+        self.current_stats = CampaignStats(
+            campaign_id=campaign_id,
+            start_time=datetime.now(),
+            total_recipients=total_recipients
+        )
+        return self.current_stats
+    
+    def record_email_sent(self, smtp_server_name: str):
+        """Record successful email send"""
+        if self.current_stats:
+            self.current_stats.emails_sent += 1
+            self.current_stats.current_smtp = smtp_server_name
+            if smtp_server_name not in self.current_stats.smtp_usage:
+                self.current_stats.smtp_usage[smtp_server_name] = 0
+            self.current_stats.smtp_usage[smtp_server_name] += 1
+    
+    def record_email_failed(self, recipient: str, error: str, smtp_server_name: str):
+        """Record failed email send"""
+        if self.current_stats:
+            self.current_stats.emails_failed += 1
+            self.current_stats.failed_recipients.append({
+                "email": recipient,
+                "error": error,
+                "smtp_server": smtp_server_name,
+                "timestamp": datetime.now().isoformat()
+            })
+    
+    def record_smtp_rotation(self):
+        """Record SMTP server rotation"""
+        if self.current_stats:
+            self.current_stats.smtp_rotations += 1
+    
+    def end_campaign(self):
+        """End campaign tracking and save analytics"""
+        if self.current_stats:
+            self.current_stats.end_time = datetime.now()
+            self._save_analytics()
+    
+    def _save_analytics(self):
+        """Save analytics to file"""
+        analytics_data = []
+        
+        if self.analytics_file.exists():
+            with open(self.analytics_file, 'r') as f:
+                analytics_data = json.load(f)
+        
+        # Convert stats to dict
+        stats_dict = {
+            "campaign_id": self.current_stats.campaign_id,
+            "start_time": self.current_stats.start_time.isoformat(),
+            "end_time": self.current_stats.end_time.isoformat() if self.current_stats.end_time else None,
+            "total_recipients": self.current_stats.total_recipients,
+            "emails_sent": self.current_stats.emails_sent,
+            "emails_failed": self.current_stats.emails_failed,
+            "smtp_rotations": self.current_stats.smtp_rotations,
+            "failed_recipients": self.current_stats.failed_recipients,
+            "smtp_usage": self.current_stats.smtp_usage,
+            "success_rate": (self.current_stats.emails_sent / self.current_stats.total_recipients * 100) if self.current_stats.total_recipients > 0 else 0
         }
-    
-    def from_dict(self, data: Dict):
-        """Load from dictionary"""
-        self.host = data.get("host", "")
-        self.port = data.get("port", 587)
-        self.username = data.get("username", "")
-        self.use_tls = data.get("use_tls", True)
-        self.sender_email = data.get("sender_email", "")
+        
+        analytics_data.append(stats_dict)
+        
+        with open(self.analytics_file, 'w') as f:
+            json.dump(analytics_data, f, indent=2)
 
-class EmailContent:
-    """Email content management"""
+class ConfigurationManager:
+    """Manage file-based configurations"""
     
     def __init__(self):
-        self.subject: str = ""
-        self.body: str = ""
-        self.is_html: bool = False
+        self.smtp_config_file = CONFIG_DIR / "smtp_servers.json"
+        self.email_lists_file = CONFIG_DIR / "email_lists.json"
+        self.templates_file = CONFIG_DIR / "email_templates.json"
+        self.campaigns_file = CONFIG_DIR / "campaign_settings.json"
     
-    def compose_interactive(self) -> bool:
-        """Interactive email composition with enhanced UI"""
-        console.print(Panel(
-            "[bold cyan]Email Content Composition[/bold cyan]\n"
-            "Create your professional email content with advanced options.\n\n"
-            "[yellow]💡 Features:[/yellow]\n"
-            "• Plain text or HTML formatting\n"
-            "• Variable substitution support\n"
-            "• Live character count\n"
-            "• Preview before sending",
-            title="✍️ Content Creation",
-            border_style="green"
-        ))
+    def load_smtp_servers(self) -> List[SMTPServer]:
+        """Load SMTP servers from configuration file"""
+        if not self.smtp_config_file.exists():
+            return []
         
-        # Subject with character count
-        self.subject = Prompt.ask("[bold]📝 Email Subject[/bold]")
-        if not self.subject.strip():
-            console.print("[red]❌ Subject cannot be empty![/red]")
-            return False
+        with open(self.smtp_config_file, 'r') as f:
+            data = json.load(f)
         
-        console.print(f"[dim]Subject length: {len(self.subject)} characters[/dim]")
+        servers = []
+        for server_data in data.get('smtp_servers', []):
+            server = SMTPServer(
+                name=server_data['name'],
+                host=server_data['host'],
+                port=server_data['port'],
+                username=server_data['username'],
+                password=server_data['password'],
+                sender_email=server_data['sender_email'],
+                use_tls=server_data.get('use_tls', True),
+                enabled=server_data.get('enabled', True),
+                max_emails_per_hour=server_data.get('max_emails_per_hour', 300)
+            )
+            servers.append(server)
         
-        # Body type selection
-        self.is_html = Confirm.ask(
-            "[bold]📄 Use HTML format?[/bold]",
-            default=False
-        )
-        
-        # Body content with enhanced input
-        body_type = "HTML" if self.is_html else "Plain Text"
-        console.print(f"[yellow]📝 Enter {body_type} email body:[/yellow]")
-        console.print("[dim]Press Enter twice when finished[/dim]")
-        
-        lines = []
-        empty_line_count = 0
-        
-        while True:
-            try:
-                line = input()
-                if line == "":
-                    empty_line_count += 1
-                    if empty_line_count >= 2:
-                        break
-                else:
-                    empty_line_count = 0
-                lines.append(line)
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Content composition cancelled[/yellow]")
-                return False
-        
-        # Remove trailing empty lines
-        while lines and lines[-1] == "":
-            lines.pop()
-        
-        self.body = "\n".join(lines)
-        
-        if not self.body.strip():
-            console.print("[red]❌ Email body cannot be empty![/red]")
-            return False
-        
-        console.print(f"[dim]Body length: {len(self.body)} characters[/dim]")
-        
-        # Preview
-        self.show_preview()
-        return Confirm.ask("[bold]✅ Accept this email content?[/bold]", default=True)
+        return servers
     
-    def show_preview(self):
-        """Show enhanced email preview"""
-        preview_table = Table(title="📋 Email Preview", show_header=False, box=None)
-        preview_table.add_column("Field", style="bold cyan", width=12)
-        preview_table.add_column("Content", style="white")
+    def load_email_list(self, list_name: str) -> List[Dict]:
+        """Load email list from configuration file"""
+        if not self.email_lists_file.exists():
+            return []
         
-        preview_table.add_row("Subject:", self.subject)
-        preview_table.add_row("Format:", "HTML" if self.is_html else "Plain Text")
+        with open(self.email_lists_file, 'r') as f:
+            data = json.load(f)
         
-        # Truncate body for preview
-        body_preview = self.body[:200] + "..." if len(self.body) > 200 else self.body
-        preview_table.add_row("Body:", body_preview)
+        return data.get('email_lists', {}).get(list_name, [])
+    
+    def load_email_template(self, template_name: str) -> Optional[Dict]:
+        """Load email template from configuration file"""
+        if not self.templates_file.exists():
+            return None
         
-        console.print(Panel(preview_table, border_style="green"))
+        with open(self.templates_file, 'r') as f:
+            data = json.load(f)
+        
+        return data.get('email_templates', {}).get(template_name)
+    
+    def load_campaign_config(self, campaign_name: str) -> Optional[Dict]:
+        """Load campaign configuration from file"""
+        if not self.campaigns_file.exists():
+            return None
+        
+        with open(self.campaigns_file, 'r') as f:
+            data = json.load(f)
+        
+        return data.get('campaigns', {}).get(campaign_name)
+    
+    def list_available_configs(self) -> Dict:
+        """List all available configurations"""
+        configs = {
+            "smtp_servers": [],
+            "email_lists": [],
+            "templates": [],
+            "campaigns": []
+        }
+        
+        if self.smtp_config_file.exists():
+            with open(self.smtp_config_file, 'r') as f:
+                data = json.load(f)
+                configs["smtp_servers"] = [s['name'] for s in data.get('smtp_servers', [])]
+        
+        if self.email_lists_file.exists():
+            with open(self.email_lists_file, 'r') as f:
+                data = json.load(f)
+                configs["email_lists"] = list(data.get('email_lists', {}).keys())
+        
+        if self.templates_file.exists():
+            with open(self.templates_file, 'r') as f:
+                data = json.load(f)
+                configs["templates"] = list(data.get('email_templates', {}).keys())
+        
+        if self.campaigns_file.exists():
+            with open(self.campaigns_file, 'r') as f:
+                data = json.load(f)
+                configs["campaigns"] = list(data.get('campaigns', {}).keys())
+        
+        return configs
 
-class RecipientManager:
-    """Enhanced recipient management"""
+class AdvancedEmailSender:
+    """Advanced email sender with SMTP rotation and analytics"""
     
-    def __init__(self):
-        self.recipients: List[str] = []
-    
-    def load_interactive(self) -> bool:
-        """Interactive recipient loading with enhanced options"""
-        console.print(Panel(
-            "[bold cyan]Recipient Management[/bold cyan]\n"
-            "Load your email recipients with multiple import options.\n\n"
-            "[yellow]💡 Supported formats:[/yellow]\n"
-            "• CSV files with email column\n"
-            "• Manual entry (comma or newline separated)\n"
-            "• Automatic validation and deduplication",
-            title="👥 Recipients",
-            border_style="yellow"
-        ))
+    def __init__(self, smtp_servers: List[SMTPServer], rotation_mode: str = "email_count", rotation_value: int = 10):
+        self.smtp_manager = SMTPRotationManager(smtp_servers, rotation_mode, rotation_value)
+        self.analytics = AnalyticsManager()
+        self.rate_limiter = RateLimiter()
         
-        method = Prompt.ask(
-            "[bold]📥 How would you like to add recipients?[/bold]",
-            choices=["csv", "manual", "file"],
-            default="csv"
-        )
+    def send_campaign(self, recipients: List[Dict], email_content: Dict, attachments: List[str] = None, 
+                     dry_run: bool = False, delay_between_emails: float = 1.0) -> CampaignStats:
+        """Send email campaign with advanced features"""
         
-        if method == "csv":
-            return self.load_from_csv()
-        elif method == "file":
-            return self.load_from_file()
-        else:
-            return self.load_manual()
-    
-    def load_from_csv(self) -> bool:
-        """Enhanced CSV loading with progress and validation"""
-        file_path = Prompt.ask("[bold]📁 CSV file path[/bold]")
+        campaign_id = f"campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        stats = self.analytics.start_campaign(campaign_id, len(recipients))
         
-        if not os.path.exists(file_path):
-            console.print(f"[red]❌ File not found: {file_path}[/red]")
-            return False
-        
-        try:
-            with console.status("[yellow]Processing CSV file...", spinner="dots"):
-                df = pd.read_csv(file_path)
-                
-                # Check for email column
-                email_columns = [col for col in df.columns if 'email' in col.lower()]
-                if not email_columns:
-                    console.print("[red]❌ No email column found in CSV. Expected column name containing 'email'.[/red]")
-                    return False
-                
-                email_col = email_columns[0]
-                console.print(f"[green]✅ Using column: {email_col}[/green]")
-                
-                raw_emails = df[email_col].dropna().astype(str).tolist()
-            
-            # Validate emails with progress bar
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
-                console=console
-            ) as progress:
-                task = progress.add_task("Validating emails...", total=len(raw_emails))
-                
-                for email in raw_emails:
-                    progress.update(task, advance=1)
-                    time.sleep(0.01)  # Small delay for visual effect
-            
-            self.recipients = EmailValidator.clean_email_list(raw_emails)
-            
-            # Show results
-            results_table = Table(title="📊 Import Results")
-            results_table.add_column("Metric", style="bold")
-            results_table.add_column("Count", style="cyan")
-            
-            results_table.add_row("Total entries", str(len(raw_emails)))
-            results_table.add_row("Valid emails", str(len(self.recipients)))
-            results_table.add_row("Invalid/duplicates", str(len(raw_emails) - len(self.recipients)))
-            
-            console.print(results_table)
-            
-            if len(self.recipients) == 0:
-                console.print("[red]❌ No valid email addresses found[/red]")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]❌ Error loading CSV: {e}[/red]")
-            return False
-    
-    def load_from_file(self) -> bool:
-        """Load from plain text file"""
-        file_path = Prompt.ask("[bold]📁 Text file path[/bold]")
-        
-        if not os.path.exists(file_path):
-            console.print(f"[red]❌ File not found: {file_path}[/red]")
-            return False
-        
-        try:
-            with open(file_path, 'r') as f:
-                content = f.read()
-            
-            # Split by various delimiters
-            import re
-            raw_emails = re.split(r'[,;\n\t\s]+', content)
-            raw_emails = [email.strip() for email in raw_emails if email.strip()]
-            
-            self.recipients = EmailValidator.clean_email_list(raw_emails)
-            
-            console.print(f"[green]✅ Loaded {len(self.recipients)} valid emails from file[/green]")
-            return len(self.recipients) > 0
-            
-        except Exception as e:
-            console.print(f"[red]❌ Error reading file: {e}[/red]")
-            return False
-    
-    def load_manual(self) -> bool:
-        """Enhanced manual entry with real-time validation"""
-        console.print("[yellow]📧 Enter email addresses (comma or newline separated):[/yellow]")
-        console.print("[dim]Press Enter twice when finished[/dim]")
-        
-        emails_input = []
-        empty_line_count = 0
-        
-        while True:
-            try:
-                line = input()
-                if line == "":
-                    empty_line_count += 1
-                    if empty_line_count >= 2:
-                        break
-                else:
-                    empty_line_count = 0
-                    emails_input.append(line)
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Manual entry cancelled[/yellow]")
-                return False
-        
-        if not emails_input:
-            console.print("[red]❌ No email addresses entered[/red]")
-            return False
-        
-        # Process input
-        all_text = " ".join(emails_input)
-        import re
-        raw_emails = re.split(r'[,;\n\t\s]+', all_text)
-        raw_emails = [email.strip() for email in raw_emails if email.strip()]
-        
-        # Validate with progress
-        with console.status("[yellow]Validating emails...", spinner="dots"):
-            self.recipients = EmailValidator.clean_email_list(raw_emails)
-        
-        console.print(f"[green]✅ Added {len(self.recipients)} valid emails[/green]")
-        
-        if len(self.recipients) != len(raw_emails):
-            console.print(f"[yellow]⚠️  Skipped {len(raw_emails) - len(self.recipients)} invalid emails[/yellow]")
-        
-        return len(self.recipients) > 0
-    
-    def show_summary(self):
-        """Enhanced recipient summary"""
-        if not self.recipients:
-            console.print("[red]❌ No recipients loaded[/red]")
-            return
-        
-        summary_table = Table(title="📊 Recipients Summary")
-        summary_table.add_column("Metric", style="bold")
-        summary_table.add_column("Value", style="cyan")
-        
-        summary_table.add_row("Total Recipients", str(len(self.recipients)))
-        
-        # Show sample emails
-        sample_size = min(5, len(self.recipients))
-        sample_emails = self.recipients[:sample_size]
-        summary_table.add_row(f"Sample ({sample_size})", ", ".join(sample_emails))
-        
-        if len(self.recipients) > sample_size:
-            summary_table.add_row("...", f"and {len(self.recipients) - sample_size} more")
-        
-        console.print(Panel(summary_table, border_style="green"))
-
-class EmailSender:
-    """Enhanced email sending with sophisticated progress tracking"""
-    
-    def __init__(self, smtp_config: SMTPConfig):
-        self.smtp_config = smtp_config
-        self.sent_count = 0
-        self.failed_count = 0
-        self.failed_recipients = []
-    
-    def send_emails(self, content: EmailContent, recipients: List[str], dry_run: bool = False) -> Dict:
-        """Send emails with enhanced progress tracking and logging"""
         if dry_run:
-            return self._dry_run(content, recipients)
+            console.print(Panel(
+                "[bold yellow]🧪 DRY RUN MODE - No emails will be sent[/bold yellow]",
+                border_style="yellow"
+            ))
         
-        results = {
-            "sent": 0,
-            "failed": 0,
-            "failed_recipients": [],
-            "start_time": datetime.now(),
-            "end_time": None
-        }
-        
-        # Create logs
-        log_file = LOGS_DIR / f"campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        
-        try:
-            # Connect to SMTP server
-            with console.status("[yellow]Connecting to SMTP server...", spinner="dots"):
-                server = smtplib.SMTP(self.smtp_config.host, self.smtp_config.port)
-                if self.smtp_config.use_tls:
-                    server.starttls()
-                server.login(self.smtp_config.username, self.smtp_config.password)
-            
-            console.print("✅ [green]Connected to SMTP server[/green]")
-            
-            # Send emails with enhanced progress
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TextColumn("•"),
-                TextColumn("Sent: [green]{task.fields[sent]}[/green]"),
-                TextColumn("•"),
-                TextColumn("Failed: [red]{task.fields[failed]}[/red]"),
-                TimeElapsedColumn(),
-                console=console
-            ) as progress:
-                
-                task = progress.add_task(
-                    "Sending emails...", 
-                    total=len(recipients),
-                    sent=0,
-                    failed=0
-                )
-                
-                for i, recipient in enumerate(recipients):
-                    try:
-                        # Create message
-                        msg = MIMEMultipart()
-                        msg['From'] = self.smtp_config.sender_email
-                        msg['To'] = recipient
-                        msg['Subject'] = content.subject
-                        
-                        # Add body
-                        body_type = 'html' if content.is_html else 'plain'
-                        msg.attach(MIMEText(content.body, body_type))
-                        
-                        # Send email
-                        server.sendmail(
-                            self.smtp_config.sender_email,
-                            recipient,
-                            msg.as_string()
-                        )
-                        
-                        results["sent"] += 1
-                        
-                        # Log success
-                        with open(log_file, 'a') as f:
-                            f.write(f"{datetime.now().isoformat()} - SUCCESS: {recipient}\n")
-                        
-                    except Exception as e:
-                        results["failed"] += 1
-                        results["failed_recipients"].append(recipient)
-                        
-                        # Log failure
-                        with open(log_file, 'a') as f:
-                            f.write(f"{datetime.now().isoformat()} - FAILED: {recipient} - {str(e)}\n")
-                    
-                    # Update progress
-                    progress.update(
-                        task, 
-                        advance=1,
-                        sent=results["sent"],
-                        failed=results["failed"]
-                    )
-                    
-                    # Rate limiting
-                    time.sleep(0.5)
-            
-            server.quit()
-            results["end_time"] = datetime.now()
-            
-        except Exception as e:
-            console.print(f"[red]❌ SMTP Error: {e}[/red]")
-            results["smtp_error"] = str(e)
-            results["end_time"] = datetime.now()
-        
-        return results
-    
-    def _dry_run(self, content: EmailContent, recipients: List[str]) -> Dict:
-        """Enhanced dry run simulation"""
-        console.print(Panel(
-            "[bold yellow]🧪 DRY RUN MODE - Simulation Only[/bold yellow]\n"
-            "No emails will actually be sent. This is a test run.",
-            border_style="yellow"
-        ))
-        
+        # Create progress display
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("•"),
+            TextColumn("✅ Sent: [green]{task.fields[sent]}[/green]"),
+            TextColumn("•"),
+            TextColumn("❌ Failed: [red]{task.fields[failed]}[/red]"),
+            TextColumn("•"),
+            TextColumn("🔄 SMTP: [cyan]{task.fields[current_smtp]}[/cyan]"),
             TimeElapsedColumn(),
             console=console
         ) as progress:
             
-            task = progress.add_task("Simulating email send...", total=len(recipients))
+            task = progress.add_task(
+                "Sending emails...",
+                total=len(recipients),
+                sent=0,
+                failed=0,
+                current_smtp=self.smtp_manager.get_current_server().name
+            )
             
             for i, recipient in enumerate(recipients):
-                progress.update(task, advance=1)
-                time.sleep(0.1)  # Simulate processing time
+                try:
+                    # Check if we should rotate SMTP servers
+                    if self.smtp_manager.should_rotate():
+                        new_server = self.smtp_manager.rotate_server()
+                        self.analytics.record_smtp_rotation()
+                        progress.update(task, current_smtp=new_server.name)
+                        console.print(f"🔄 [cyan]Rotated to SMTP: {new_server.name}[/cyan]")
+                    
+                    current_server = self.smtp_manager.get_current_server()
+                    
+                    if not dry_run:
+                        # Get SMTP connection
+                        server_connection = self.smtp_manager.get_server_connection(current_server)
+                        
+                        # Create email message
+                        msg = self._create_email_message(recipient, email_content, current_server, attachments)
+                        
+                        # Send email
+                        server_connection.sendmail(
+                            current_server.sender_email,
+                            recipient['email'],
+                            msg.as_string()
+                        )
+                    
+                    # Record success
+                    self.smtp_manager.record_email_sent()
+                    self.analytics.record_email_sent(current_server.name)
+                    
+                    progress.update(
+                        task,
+                        advance=1,
+                        sent=stats.emails_sent,
+                        failed=stats.emails_failed
+                    )
+                    
+                    # Rate limiting
+                    time.sleep(delay_between_emails)
+                    
+                except Exception as e:
+                    # Record failure
+                    self.analytics.record_email_failed(
+                        recipient['email'], 
+                        str(e), 
+                        self.smtp_manager.get_current_server().name
+                    )
+                    
+                    progress.update(
+                        task,
+                        advance=1,
+                        sent=stats.emails_sent,
+                        failed=stats.emails_failed
+                    )
+                    
+                    console.print(f"❌ [red]Failed to send to {recipient['email']}: {str(e)}[/red]")
         
-        return {
-            "sent": len(recipients),
-            "failed": 0,
-            "failed_recipients": [],
-            "dry_run": True,
-            "start_time": datetime.now(),
-            "end_time": datetime.now()
-        }
+        # Cleanup
+        self.smtp_manager.cleanup_connections()
+        self.analytics.end_campaign()
+        
+        return stats
+    
+    def _create_email_message(self, recipient: Dict, content: Dict, server: SMTPServer, attachments: List[str] = None):
+        """Create email message with content and attachments"""
+        msg = MIMEMultipart()
+        msg['From'] = server.sender_email
+        msg['To'] = recipient['email']
+        msg['Subject'] = self._render_template(content['subject'], recipient)
+        
+        # Add body
+        body = self._render_template(content['body'], recipient)
+        body_type = 'html' if content.get('is_html', False) else 'plain'
+        msg.attach(MIMEText(body, body_type))
+        
+        # Add attachments
+        if attachments:
+            for attachment_path in attachments:
+                if os.path.exists(attachment_path):
+                    with open(attachment_path, "rb") as attachment:
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(attachment.read())
+                    
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename= {os.path.basename(attachment_path)}'
+                    )
+                    msg.attach(part)
+        
+        return msg
+    
+    def _render_template(self, template: str, recipient: Dict) -> str:
+        """Render template with recipient data"""
+        rendered = template
+        for key, value in recipient.items():
+            placeholder = f"{{{key}}}"
+            rendered = rendered.replace(placeholder, str(value))
+        return rendered
+
+class RateLimiter:
+    """Advanced rate limiting functionality"""
+    
+    def __init__(self):
+        self.email_timestamps = []
+        self.max_emails_per_minute = 60
+        self.max_emails_per_hour = 1000
+    
+    def can_send_email(self) -> bool:
+        """Check if we can send another email based on rate limits"""
+        now = datetime.now()
+        
+        # Clean old timestamps
+        self.email_timestamps = [
+            ts for ts in self.email_timestamps 
+            if now - ts < timedelta(hours=1)
+        ]
+        
+        # Check hourly limit
+        if len(self.email_timestamps) >= self.max_emails_per_hour:
+            return False
+        
+        # Check per-minute limit
+        recent_emails = [
+            ts for ts in self.email_timestamps 
+            if now - ts < timedelta(minutes=1)
+        ]
+        
+        if len(recent_emails) >= self.max_emails_per_minute:
+            return False
+        
+        return True
+    
+    def record_email_sent(self):
+        """Record that an email was sent"""
+        self.email_timestamps.append(datetime.now())
+
+def show_analytics_dashboard():
+    """Display comprehensive analytics dashboard"""
+    analytics_file = ANALYTICS_DIR / "campaign_analytics.json"
+    
+    if not analytics_file.exists():
+        console.print("[yellow]No analytics data available yet.[/yellow]")
+        return
+    
+    with open(analytics_file, 'r') as f:
+        analytics_data = json.load(f)
+    
+    if not analytics_data:
+        console.print("[yellow]No campaigns recorded yet.[/yellow]")
+        return
+    
+    # Summary table
+    summary_table = Table(title="📊 Campaign Analytics Summary", box=box.ROUNDED)
+    summary_table.add_column("Campaign ID", style="cyan")
+    summary_table.add_column("Date", style="white")
+    summary_table.add_column("Recipients", style="blue")
+    summary_table.add_column("Sent", style="green")
+    summary_table.add_column("Failed", style="red")
+    summary_table.add_column("Success Rate", style="yellow")
+    summary_table.add_column("SMTP Rotations", style="magenta")
+    
+    total_sent = 0
+    total_failed = 0
+    total_rotations = 0
+    
+    for campaign in analytics_data[-10:]:  # Show last 10 campaigns
+        start_time = datetime.fromisoformat(campaign['start_time'])
+        success_rate = f"{campaign.get('success_rate', 0):.1f}%"
+        
+        summary_table.add_row(
+            campaign['campaign_id'],
+            start_time.strftime('%Y-%m-%d %H:%M'),
+            str(campaign['total_recipients']),
+            str(campaign['emails_sent']),
+            str(campaign['emails_failed']),
+            success_rate,
+            str(campaign.get('smtp_rotations', 0))
+        )
+        
+        total_sent += campaign['emails_sent']
+        total_failed += campaign['emails_failed']
+        total_rotations += campaign.get('smtp_rotations', 0)
+    
+    console.print(summary_table)
+    
+    # SMTP Usage Analysis
+    if analytics_data:
+        latest_campaign = analytics_data[-1]
+        if 'smtp_usage' in latest_campaign and latest_campaign['smtp_usage']:
+            smtp_table = Table(title="🔄 SMTP Server Usage (Latest Campaign)", box=box.ROUNDED)
+            smtp_table.add_column("SMTP Server", style="cyan")
+            smtp_table.add_column("Emails Sent", style="green")
+            smtp_table.add_column("Percentage", style="yellow")
+            
+            total_emails = sum(latest_campaign['smtp_usage'].values())
+            for smtp_name, count in latest_campaign['smtp_usage'].items():
+                percentage = f"{(count/total_emails*100):.1f}%" if total_emails > 0 else "0%"
+                smtp_table.add_row(smtp_name, str(count), percentage)
+            
+            console.print(smtp_table)
+    
+    # Overall Statistics
+    overall_stats = Panel(
+        f"[bold]Total Campaigns:[/bold] {len(analytics_data)}\n"
+        f"[bold]Total Emails Sent:[/bold] [green]{total_sent}[/green]\n"
+        f"[bold]Total Failures:[/bold] [red]{total_failed}[/red]\n"
+        f"[bold]Total SMTP Rotations:[/bold] [magenta]{total_rotations}[/magenta]\n"
+        f"[bold]Overall Success Rate:[/bold] [yellow]{(total_sent/(total_sent+total_failed)*100):.1f}%[/yellow]" if (total_sent + total_failed) > 0 else "[bold]Overall Success Rate:[/bold] [yellow]N/A[/yellow]",
+        title="📈 Overall Statistics",
+        border_style="green"
+    )
+    
+    console.print(overall_stats)
+
+@app.command()
+def send(
+    smtp_config: str = typer.Option(None, "--smtp-config", "-s", help="SMTP configuration name from config file"),
+    email_list: str = typer.Option(None, "--email-list", "-l", help="Email list name from config file"),
+    template: str = typer.Option(None, "--template", "-t", help="Email template name from config file"),
+    rotation_mode: str = typer.Option("email_count", "--rotation-mode", "-r", help="SMTP rotation mode: email_count or time_based"),
+    rotation_value: int = typer.Option(10, "--rotation-value", "-v", help="Emails per rotation or seconds per rotation"),
+    delay: float = typer.Option(1.0, "--delay", "-d", help="Delay between emails in seconds"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Test mode - don't actually send emails"),
+    interactive: bool = typer.Option(True, "--interactive/--no-interactive", help="Use interactive mode")
+):
+    """🚀 Send email campaigns with advanced SMTP rotation"""
+    
+    config_manager = ConfigurationManager()
+    
+    # Show welcome
+    show_welcome()
+    
+    if interactive:
+        # Interactive mode
+        smtp_servers = configure_smtp_interactive(config_manager)
+        recipients = load_recipients_interactive(config_manager)
+        email_content = compose_email_interactive(config_manager)
+    else:
+        # File-based mode
+        if not all([smtp_config, email_list, template]):
+            console.print("[red]❌ For non-interactive mode, you must specify --smtp-config, --email-list, and --template[/red]")
+            raise typer.Exit(1)
+        
+        smtp_servers = config_manager.load_smtp_servers()
+        if smtp_config != "all":
+            smtp_servers = [s for s in smtp_servers if s.name == smtp_config]
+        
+        recipients_data = config_manager.load_email_list(email_list)
+        recipients = [{"email": r["email"], **r} for r in recipients_data]
+        
+        template_data = config_manager.load_email_template(template)
+        if not template_data:
+            console.print(f"[red]❌ Template '{template}' not found[/red]")
+            raise typer.Exit(1)
+        
+        email_content = template_data
+    
+    if not smtp_servers:
+        console.print("[red]❌ No SMTP servers configured[/red]")
+        raise typer.Exit(1)
+    
+    if not recipients:
+        console.print("[red]❌ No recipients loaded[/red]")
+        raise typer.Exit(1)
+    
+    # Show configuration summary
+    show_campaign_summary(smtp_servers, recipients, email_content, rotation_mode, rotation_value)
+    
+    if not dry_run and not Confirm.ask(f"[bold red]🚨 Send {len(recipients)} REAL emails?[/bold red]"):
+        console.print("[yellow]Campaign cancelled[/yellow]")
+        raise typer.Exit(0)
+    
+    # Send campaign
+    sender = AdvancedEmailSender(smtp_servers, rotation_mode, rotation_value)
+    stats = sender.send_campaign(recipients, email_content, dry_run=dry_run, delay_between_emails=delay)
+    
+    # Show results
+    show_campaign_results(stats, dry_run)
+
+@app.command()
+def campaign(
+    name: str = typer.Argument(..., help="Campaign name from configuration file"),
+    dry_run: bool = typer.Option(True, "--dry-run/--live", help="Test mode or live sending")
+):
+    """🎯 Run a pre-configured campaign from file"""
+    
+    config_manager = ConfigurationManager()
+    
+    # Load campaign configuration
+    campaign_config = config_manager.load_campaign_config(name)
+    if not campaign_config:
+        console.print(f"[red]❌ Campaign '{name}' not found[/red]")
+        show_available_campaigns(config_manager)
+        raise typer.Exit(1)
+    
+    console.print(f"[bold cyan]🎯 Running Campaign: {campaign_config.get('name', name)}[/bold cyan]")
+    
+    # Load components
+    smtp_servers = config_manager.load_smtp_servers()
+    smtp_server_name = campaign_config.get('smtp_server')
+    if smtp_server_name and smtp_server_name != "all":
+        smtp_servers = [s for s in smtp_servers if s.name == smtp_server_name]
+    
+    email_list_name = campaign_config.get('email_list')
+    recipients_data = config_manager.load_email_list(email_list_name)
+    recipients = [{"email": r["email"], **r} for r in recipients_data]
+    
+    template_name = campaign_config.get('template')
+    email_content = config_manager.load_email_template(template_name)
+    
+    # Get campaign settings
+    settings = campaign_config.get('settings', {})
+    rotation_mode = settings.get('rotation_mode', 'email_count')
+    rotation_value = settings.get('rotation_value', 10)
+    delay = settings.get('delay_between_emails', 1.0)
+    
+    # Override dry_run if specified in campaign
+    if 'send_mode' in settings:
+        dry_run = settings['send_mode'] == 'dry_run'
+    
+    # Show summary and run
+    show_campaign_summary(smtp_servers, recipients, email_content, rotation_mode, rotation_value)
+    
+    sender = AdvancedEmailSender(smtp_servers, rotation_mode, rotation_value)
+    stats = sender.send_campaign(recipients, email_content, dry_run=dry_run, delay_between_emails=delay)
+    
+    show_campaign_results(stats, dry_run)
+
+@app.command()
+def analytics():
+    """📊 View detailed campaign analytics"""
+    show_analytics_dashboard()
+
+@app.command()
+def config():
+    """⚙️ Show configuration overview"""
+    config_manager = ConfigurationManager()
+    configs = config_manager.list_available_configs()
+    
+    console.print(Panel(
+        f"[bold cyan]📁 Configuration Overview[/bold cyan]\n\n"
+        f"[yellow]📧 SMTP Servers:[/yellow] {len(configs['smtp_servers'])}\n"
+        f"[yellow]👥 Email Lists:[/yellow] {len(configs['email_lists'])}\n" 
+        f"[yellow]📝 Templates:[/yellow] {len(configs['templates'])}\n"
+        f"[yellow]🎯 Campaigns:[/yellow] {len(configs['campaigns'])}\n\n"
+        f"[dim]Config files location: {CONFIG_DIR}[/dim]",
+        title="Configuration Status",
+        border_style="blue"
+    ))
+    
+    # Show details
+    for config_type, items in configs.items():
+        if items:
+            console.print(f"\n[bold]{config_type.replace('_', ' ').title()}:[/bold]")
+            for item in items:
+                console.print(f"  • {item}")
 
 def show_welcome():
-    """Enhanced welcome screen with animations"""
+    """Enhanced welcome screen"""
     welcome_art = """
     ╔══════════════════════════════════════════════════════════════╗
     ║                                                              ║
@@ -609,197 +753,342 @@ def show_welcome():
     ║       ██║   ███████╗██║  ██║██║ ╚═╝ ██║███████║███████╗    ║
     ║       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝    ║
     ║                                                              ║
-    ║                Professional Email Campaign Manager           ║
-    ║                         Version 2.0                         ║
+    ║            Professional Email Campaign Manager               ║
+    ║                    Advanced CLI v3.0                        ║
     ╚══════════════════════════════════════════════════════════════╝
     """
     
     console.print(welcome_art, style="bold cyan")
     
     features = [
-        "🎯 Professional email campaigns",
-        "🛡️  Advanced SMTP security",
-        "📊 Real-time progress tracking",
-        "✅ Email validation & deduplication",
-        "📝 HTML & plain text support",
-        "🔒 Privacy & compliance focused"
+        "🔄 Advanced SMTP rotation (email count / time-based)",
+        "📊 Real-time analytics and success tracking",
+        "📁 File-based configuration support",
+        "🎯 Pre-configured campaign management",
+        "⚡ Rate limiting and delivery optimization",
+        "🛡️ Enhanced error handling and retry logic"
     ]
     
-    console.print("\n[bold green]Features:[/bold green]")
+    console.print("\n[bold green]🚀 Advanced Features:[/bold green]")
     for feature in features:
         console.print(f"  {feature}")
     
     console.print("\n" + "="*60)
-    
-    compliance_text = Text()
-    compliance_text.append("⚠️  COMPLIANCE NOTICE\n", style="bold red")
-    compliance_text.append("By using TermSender Pro, you agree to:\n", style="yellow")
-    compliance_text.append("• Comply with anti-spam laws (CAN-SPAM, GDPR)\n", style="white")
-    compliance_text.append("• Only email consented recipients\n", style="white")
-    compliance_text.append("• Include unsubscribe options\n", style="white")
-    compliance_text.append("• Respect rate limits and policies\n", style="white")
-    compliance_text.append("• Use this tool ethically and responsibly", style="white")
-    
-    console.print(Panel(compliance_text, border_style="red", title="⚖️ Legal Compliance"))
-    
-    if not Confirm.ask("\n[bold red]Do you understand and agree to use this tool ethically?[/bold red]"):
-        console.print("[red]Exiting. Please use this tool responsibly.[/red]")
-        raise typer.Exit(1)
 
-def show_results(results: Dict):
-    """Enhanced results display with statistics"""
-    if results.get("dry_run"):
+def configure_smtp_interactive(config_manager: ConfigurationManager) -> List[SMTPServer]:
+    """Interactive SMTP configuration"""
+    console.print(Panel(
+        "[bold cyan]📧 SMTP Configuration[/bold cyan]\n"
+        "Configure multiple SMTP servers for rotation",
+        title="SMTP Setup",
+        border_style="blue"
+    ))
+    
+    # Check for existing configuration
+    existing_servers = config_manager.load_smtp_servers()
+    if existing_servers:
+        console.print(f"[green]✅ Found {len(existing_servers)} configured SMTP servers[/green]")
+        for server in existing_servers:
+            status = "🟢" if server.enabled else "🔴"
+            console.print(f"  {status} {server.name} ({server.host})")
+        
+        if Confirm.ask("Use existing SMTP configuration?", default=True):
+            return [s for s in existing_servers if s.enabled]
+    
+    # Configure new servers
+    servers = []
+    while True:
+        console.print(f"\n[bold]Configuring SMTP Server #{len(servers) + 1}[/bold]")
+        
+        name = Prompt.ask("Server name", default=f"SMTP-{len(servers) + 1}")
+        host = Prompt.ask("SMTP Host", default="smtp.gmail.com")
+        port = IntPrompt.ask("SMTP Port", default=587)
+        username = Prompt.ask("Username/Email")
+        password = Prompt.ask("Password", password=True)
+        sender_email = Prompt.ask("Sender Email", default=username)
+        use_tls = Confirm.ask("Use TLS?", default=True)
+        
+        server = SMTPServer(name, host, port, username, password, sender_email, use_tls)
+        
+        # Test connection
+        if test_smtp_connection(server):
+            servers.append(server)
+            console.print(f"[green]✅ {name} added successfully[/green]")
+        else:
+            console.print(f"[red]❌ Failed to add {name}[/red]")
+        
+        if not Confirm.ask("Add another SMTP server?", default=False):
+            break
+    
+    return servers
+
+def load_recipients_interactive(config_manager: ConfigurationManager) -> List[Dict]:
+    """Interactive recipient loading"""
+    console.print(Panel(
+        "[bold cyan]👥 Recipient Management[/bold cyan]\n"
+        "Load recipients from files or enter manually",
+        title="Recipients",
+        border_style="green"
+    ))
+    
+    method = Prompt.ask(
+        "Load method",
+        choices=["file", "csv", "manual"],
+        default="file"
+    )
+    
+    if method == "file":
+        # Show available email lists
+        configs = config_manager.list_available_configs()
+        if configs['email_lists']:
+            console.print("Available email lists:")
+            for list_name in configs['email_lists']:
+                console.print(f"  • {list_name}")
+            
+            list_name = Prompt.ask("Email list name")
+            recipients_data = config_manager.load_email_list(list_name)
+            return [{"email": r["email"], **r} for r in recipients_data]
+        else:
+            console.print("[yellow]No email lists found in configuration[/yellow]")
+            return load_recipients_csv()
+    
+    elif method == "csv":
+        return load_recipients_csv()
+    
+    else:
+        return load_recipients_manual()
+
+def load_recipients_csv() -> List[Dict]:
+    """Load recipients from CSV file"""
+    file_path = Prompt.ask("CSV file path")
+    
+    if not os.path.exists(file_path):
+        console.print(f"[red]❌ File not found: {file_path}[/red]")
+        return []
+    
+    try:
+        df = pd.read_csv(file_path)
+        recipients = []
+        
+        # Find email column
+        email_columns = [col for col in df.columns if 'email' in col.lower()]
+        if not email_columns:
+            console.print("[red]❌ No email column found[/red]")
+            return []
+        
+        email_col = email_columns[0]
+        
+        for _, row in df.iterrows():
+            email = str(row[email_col]).strip().lower()
+            if validate_email_address(email):
+                recipient = {"email": email}
+                # Add other columns as additional data
+                for col in df.columns:
+                    if col != email_col:
+                        recipient[col] = str(row[col]) if pd.notna(row[col]) else ""
+                recipients.append(recipient)
+        
+        console.print(f"[green]✅ Loaded {len(recipients)} valid recipients[/green]")
+        return recipients
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error loading CSV: {e}[/red]")
+        return []
+
+def load_recipients_manual() -> List[Dict]:
+    """Manual recipient entry"""
+    console.print("Enter email addresses (one per line, empty line to finish):")
+    
+    emails = []
+    while True:
+        email = input().strip()
+        if not email:
+            break
+        
+        if validate_email_address(email):
+            emails.append({"email": email.lower()})
+        else:
+            console.print(f"[yellow]⚠️  Invalid email: {email}[/yellow]")
+    
+    return emails
+
+def compose_email_interactive(config_manager: ConfigurationManager) -> Dict:
+    """Interactive email composition"""
+    console.print(Panel(
+        "[bold cyan]✍️ Email Composition[/bold cyan]\n"
+        "Create your email content",
+        title="Compose",
+        border_style="yellow"
+    ))
+    
+    # Check for existing templates
+    configs = config_manager.list_available_configs()
+    if configs['templates']:
+        console.print("Available templates:")
+        for template_name in configs['templates']:
+            console.print(f"  • {template_name}")
+        
+        if Confirm.ask("Use an existing template?", default=False):
+            template_name = Prompt.ask("Template name")
+            template_data = config_manager.load_email_template(template_name)
+            if template_data:
+                return template_data
+    
+    # Compose new email
+    subject = Prompt.ask("Email subject")
+    is_html = Confirm.ask("Use HTML format?", default=False)
+    
+    console.print("Enter email body (press Enter twice to finish):")
+    lines = []
+    empty_count = 0
+    
+    while empty_count < 2:
+        line = input()
+        if line == "":
+            empty_count += 1
+        else:
+            empty_count = 0
+        lines.append(line)
+    
+    # Remove trailing empty lines
+    while lines and lines[-1] == "":
+        lines.pop()
+    
+    body = "\n".join(lines)
+    
+    return {
+        "subject": subject,
+        "body": body,
+        "is_html": is_html
+    }
+
+def test_smtp_connection(server: SMTPServer) -> bool:
+    """Test SMTP connection"""
+    try:
+        with console.status(f"[yellow]Testing {server.name}...", spinner="dots"):
+            connection = smtplib.SMTP(server.host, server.port)
+            if server.use_tls:
+                connection.starttls()
+            connection.login(server.username, server.password)
+            connection.quit()
+        
+        console.print(f"[green]✅ {server.name} connection successful[/green]")
+        return True
+    except Exception as e:
+        console.print(f"[red]❌ {server.name} connection failed: {e}[/red]")
+        return False
+
+def validate_email_address(email: str) -> bool:
+    """Validate email address"""
+    try:
+        validate_email(email)
+        return True
+    except EmailNotValidError:
+        return False
+
+def show_campaign_summary(smtp_servers: List[SMTPServer], recipients: List[Dict], 
+                         email_content: Dict, rotation_mode: str, rotation_value: int):
+    """Show campaign summary before sending"""
+    summary_table = Table(title="📋 Campaign Summary", box=box.ROUNDED)
+    summary_table.add_column("Component", style="bold cyan")
+    summary_table.add_column("Details", style="white")
+    
+    summary_table.add_row("📧 Subject", email_content.get('subject', 'No subject'))
+    summary_table.add_row("📄 Format", "HTML" if email_content.get('is_html', False) else "Plain Text")
+    summary_table.add_row("👥 Recipients", str(len(recipients)))
+    summary_table.add_row("📮 SMTP Servers", str(len(smtp_servers)))
+    summary_table.add_row("🔄 Rotation Mode", f"{rotation_mode} ({rotation_value})")
+    
+    console.print(Panel(summary_table, border_style="blue"))
+    
+    # Show SMTP servers
+    smtp_table = Table(title="🔄 SMTP Server Configuration", box=box.ROUNDED)
+    smtp_table.add_column("Name", style="cyan")
+    smtp_table.add_column("Host", style="white")
+    smtp_table.add_column("Status", style="green")
+    
+    for server in smtp_servers:
+        smtp_table.add_row(server.name, f"{server.host}:{server.port}", "✅ Ready")
+    
+    console.print(smtp_table)
+
+def show_campaign_results(stats: CampaignStats, dry_run: bool):
+    """Show detailed campaign results"""
+    if dry_run:
         console.print(Panel(
             f"[bold yellow]🧪 DRY RUN COMPLETED[/bold yellow]\n\n"
-            f"✅ Simulated: {results['sent']} emails\n"
-            f"⏱️  Duration: {(results['end_time'] - results['start_time']).total_seconds():.1f}s",
-            title="Simulation Results",
+            f"✅ Would have sent: {stats.emails_sent} emails\n"
+            f"🔄 SMTP rotations: {stats.smtp_rotations}\n"
+            f"⏱️ Simulation completed successfully",
+            title="Test Results",
             border_style="yellow"
         ))
         return
     
     # Calculate statistics
-    duration = results.get("end_time", datetime.now()) - results["start_time"]
-    total = results["sent"] + results["failed"]
-    success_rate = (results["sent"] / total * 100) if total > 0 else 0
+    duration = stats.end_time - stats.start_time if stats.end_time else timedelta(0)
+    success_rate = (stats.emails_sent / stats.total_recipients * 100) if stats.total_recipients > 0 else 0
     
-    # Create results table
-    results_table = Table(title="📊 Campaign Results", show_header=False)
-    results_table.add_column("Metric", style="bold", width=20)
+    # Main results
+    results_table = Table(title="📊 Campaign Results", box=box.ROUNDED)
+    results_table.add_column("Metric", style="bold")
     results_table.add_column("Value", style="cyan")
     
-    results_table.add_row("✅ Successfully Sent", f"[green]{results['sent']}[/green]")
-    results_table.add_row("❌ Failed", f"[red]{results['failed']}[/red]")
+    results_table.add_row("✅ Emails Sent", f"[green]{stats.emails_sent}[/green]")
+    results_table.add_row("❌ Failed", f"[red]{stats.emails_failed}[/red]")
     results_table.add_row("📊 Success Rate", f"{success_rate:.1f}%")
+    results_table.add_row("🔄 SMTP Rotations", str(stats.smtp_rotations))
     results_table.add_row("⏱️ Duration", str(duration).split('.')[0])
-    results_table.add_row("📧 Rate", f"{results['sent']/duration.total_seconds():.2f} emails/sec")
     
     console.print(Panel(results_table, border_style="green"))
     
-    # Show failed recipients if any
-    if results["failed"] > 0:
-        console.print(f"\n[red]❌ Failed Recipients ({results['failed']}):[/red]")
-        for recipient in results["failed_recipients"][:10]:  # Show first 10
-            console.print(f"  • {recipient}")
-        if len(results["failed_recipients"]) > 10:
-            console.print(f"  ... and {len(results['failed_recipients']) - 10} more")
+    # SMTP usage breakdown
+    if stats.smtp_usage:
+        smtp_usage_table = Table(title="🔄 SMTP Server Usage", box=box.ROUNDED)
+        smtp_usage_table.add_column("Server", style="cyan")
+        smtp_usage_table.add_column("Emails Sent", style="green")
+        smtp_usage_table.add_column("Percentage", style="yellow")
+        
+        total_sent = sum(stats.smtp_usage.values())
+        for server_name, count in stats.smtp_usage.items():
+            percentage = f"{(count/total_sent*100):.1f}%" if total_sent > 0 else "0%"
+            smtp_usage_table.add_row(server_name, str(count), percentage)
+        
+        console.print(smtp_usage_table)
     
-    # Success celebration
-    if success_rate >= 95:
-        console.print("\n🎉 [bold green]Excellent! Campaign completed successfully![/bold green]")
-    elif success_rate >= 80:
-        console.print("\n👍 [bold yellow]Good! Most emails were sent successfully.[/bold yellow]")
-    else:
-        console.print("\n⚠️ [bold red]Warning: High failure rate. Check your configuration.[/bold red]")
+    # Show failures if any
+    if stats.failed_recipients:
+        console.print(f"\n[red]❌ Failed Recipients ({len(stats.failed_recipients)}):[/red]")
+        for failure in stats.failed_recipients[:5]:  # Show first 5
+            console.print(f"  • {failure['email']}: {failure['error']}")
+        if len(stats.failed_recipients) > 5:
+            console.print(f"  ... and {len(stats.failed_recipients) - 5} more")
 
-@app.command()
-def send():
-    """🚀 Start the interactive email sending process"""
-    try:
-        show_welcome()
-        
-        # Initialize components
-        smtp_config = SMTPConfig()
-        content = EmailContent()
-        recipient_manager = RecipientManager()
-        
-        console.print("\n[bold blue]🔧 Step 1: SMTP Configuration[/bold blue]")
-        if not smtp_config.configure_interactive():
-            console.print("[red]❌ SMTP configuration failed. Exiting.[/red]")
-            raise typer.Exit(1)
-        
-        console.print("\n[bold blue]✍️ Step 2: Email Content[/bold blue]")
-        if not content.compose_interactive():
-            console.print("[red]❌ Email composition cancelled. Exiting.[/red]")
-            raise typer.Exit(1)
-        
-        console.print("\n[bold blue]👥 Step 3: Load Recipients[/bold blue]")
-        if not recipient_manager.load_interactive():
-            console.print("[red]❌ No valid recipients loaded. Exiting.[/red]")
-            raise typer.Exit(1)
-        
-        recipient_manager.show_summary()
-        
-        console.print("\n[bold blue]🔍 Step 4: Final Review[/bold blue]")
-        
-        # Show campaign summary
-        summary_table = Table(title="📋 Campaign Summary")
-        summary_table.add_column("Component", style="bold")
-        summary_table.add_column("Details", style="cyan")
-        
-        summary_table.add_row("📧 Subject", content.subject)
-        summary_table.add_row("📄 Format", "HTML" if content.is_html else "Plain Text")
-        summary_table.add_row("👥 Recipients", str(len(recipient_manager.recipients)))
-        summary_table.add_row("📮 SMTP Server", f"{smtp_config.host}:{smtp_config.port}")
-        summary_table.add_row("👤 Sender", smtp_config.sender_email)
-        
-        console.print(Panel(summary_table, border_style="blue"))
-        
-        # Settings
-        dry_run = Confirm.ask(
-            "[bold]🧪 Run in test mode? (recommended for first time)[/bold]", 
-            default=True
-        )
-        
-        if not dry_run:
-            final_confirm = Confirm.ask(
-                f"[bold red]🚨 Ready to send {len(recipient_manager.recipients)} REAL emails? This cannot be undone![/bold red]"
-            )
-            if not final_confirm:
-                console.print("[yellow]📤 Send cancelled by user.[/yellow]")
-                raise typer.Exit(0)
-        
-        console.print("\n[bold blue]🚀 Step 5: Launching Campaign[/bold blue]")
-        sender = EmailSender(smtp_config)
-        results = sender.send_emails(content, recipient_manager.recipients, dry_run)
-        
-        show_results(results)
-        
-        # Save logs reference
-        if not dry_run:
-            console.print(f"\n[dim]📝 Detailed logs saved to: logs/[/dim]")
-        
-    except KeyboardInterrupt:
-        console.print("\n[yellow]⚠️ Operation cancelled by user.[/yellow]")
-        raise typer.Exit(0)
-    except Exception as e:
-        console.print(f"\n[red]❌ Unexpected error: {e}[/red]")
-        raise typer.Exit(1)
+def show_available_campaigns(config_manager: ConfigurationManager):
+    """Show available campaigns"""
+    configs = config_manager.list_available_configs()
+    if configs['campaigns']:
+        console.print("\n[bold]Available campaigns:[/bold]")
+        for campaign_name in configs['campaigns']:
+            console.print(f"  • {campaign_name}")
+        console.print("\n[dim]Use: termsender campaign <name>[/dim]")
 
 @app.command()
 def version():
     """📋 Show version information"""
     console.print(Panel(
-        "[bold cyan]TermSender Pro v2.0[/bold cyan]\n"
-        "Professional terminal email campaign manager\n\n"
-        "[yellow]Features:[/yellow]\n"
-        "• Interactive CLI interface\n"
-        "• SMTP configuration & testing\n"
-        "• CSV & manual recipient import\n"
-        "• HTML & plain text emails\n"
-        "• Real-time progress tracking\n"
-        "• Comprehensive logging\n"
-        "• Compliance & security focused",
+        "[bold cyan]TermSender Pro v3.0[/bold cyan]\n"
+        "Advanced Email Campaign Manager with SMTP Rotation\n\n"
+        "[yellow]🚀 Enhanced Features:[/yellow]\n"
+        "• Multiple SMTP server rotation\n"
+        "• Real-time analytics and tracking\n"
+        "• File-based configuration system\n"
+        "• Advanced rate limiting\n"
+        "• Comprehensive campaign management\n"
+        "• Professional terminal interface",
         title="📋 Version Info",
         border_style="cyan"
     ))
-
-@app.command()
-def test():
-    """🧪 Test SMTP configuration without sending emails"""
-    console.print(Panel(
-        "[bold yellow]🧪 SMTP Test Mode[/bold yellow]\n"
-        "Test your SMTP configuration without sending any emails.",
-        title="Test Mode",
-        border_style="yellow"
-    ))
-    
-    smtp_config = SMTPConfig()
-    if smtp_config.configure_interactive():
-        console.print("\n[bold green]✅ SMTP configuration is working correctly![/bold green]")
-        console.print("[dim]You can now use the 'send' command to start a campaign.[/dim]")
-    else:
-        console.print("\n[bold red]❌ SMTP configuration failed. Please check your settings.[/bold red]")
 
 if __name__ == "__main__":
     app()

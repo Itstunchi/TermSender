@@ -1,14 +1,29 @@
+
 {
   "smtp_servers": [
     {
-      "name": "Gmail SMTP",
+      "name": "Gmail Primary",
       "host": "smtp.gmail.com",
       "port": 587,
-      "username": "your-email@gmail.com",
-      "password": "your-app-password",
-      "sender_email": "your-email@gmail.com",
+      "username": "your-primary@gmail.com",
+      "password": "your-app-password-1",
+      "sender_email": "your-primary@gmail.com",
       "use_tls": true,
-      "enabled": true
+      "enabled": true,
+      "max_emails_per_hour": 300,
+      "priority": 1
+    },
+    {
+      "name": "Gmail Secondary",
+      "host": "smtp.gmail.com",
+      "port": 587,
+      "username": "your-secondary@gmail.com",
+      "password": "your-app-password-2",
+      "sender_email": "your-secondary@gmail.com",
+      "use_tls": true,
+      "enabled": true,
+      "max_emails_per_hour": 300,
+      "priority": 2
     },
     {
       "name": "Outlook SMTP",
@@ -18,7 +33,9 @@
       "password": "your-password",
       "sender_email": "your-email@outlook.com",
       "use_tls": true,
-      "enabled": false
+      "enabled": false,
+      "max_emails_per_hour": 250,
+      "priority": 3
     },
     {
       "name": "Custom SMTP",
@@ -28,7 +45,16 @@
       "password": "your-password",
       "sender_email": "noreply@yourdomain.com",
       "use_tls": true,
-      "enabled": false
+      "enabled": false,
+      "max_emails_per_hour": 500,
+      "priority": 4
     }
-  ]
+  ],
+  "rotation_settings": {
+    "default_mode": "email_count",
+    "default_emails_per_rotation": 10,
+    "default_seconds_per_rotation": 30,
+    "enable_failover": true,
+    "max_retries_per_server": 3
+  }
 }
