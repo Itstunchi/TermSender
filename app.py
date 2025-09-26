@@ -7,6 +7,7 @@ Professional email sender with sophisticated web interface
 import os
 import json
 import smtplib
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -22,8 +23,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
-# Import our existing classes and config manager
-from termsender import SMTPConfig, EmailValidator, EmailSender, EmailContent
+# Import our classes
 from config_manager import config_manager
 
 app = Flask(__name__)
@@ -38,13 +38,21 @@ ALLOWED_EXTENSIONS = {'txt', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', '
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def validate_email_address(email):
+    """Validate email address"""
+    try:
+        validate_email(email)
+        return True
+    except EmailNotValidError:
+        return False
+
 class WebEmailSender:
     """Web-optimized email sender with progress callbacks"""
-    
+
     def __init__(self, smtp_config: dict):
         self.smtp_config = smtp_config
         self.progress_callback = None
-    
+
     def send_emails_async(self, content: dict, recipients: List[str], attachments: List[str] = None, dry_run: bool = False):
         """Send emails with progress updates"""
         results = {
@@ -55,22 +63,21 @@ class WebEmailSender:
             "total": len(recipients),
             "dry_run": dry_run
         }
-        
+
         if dry_run:
             for i, recipient in enumerate(recipients):
                 results["sent"] = i + 1
-                if self.progress_callback:
-                    self.progress_callback(results)
+                time.sleep(0.1)  # Simulate processing
             results["end_time"] = datetime.now().isoformat()
             return results
-        
+
         try:
             # Connect to SMTP server
             server = smtplib.SMTP(self.smtp_config['host'], self.smtp_config['port'])
             if self.smtp_config.get('use_tls', True):
                 server.starttls()
             server.login(self.smtp_config['username'], self.smtp_config['password'])
-            
+
             for i, recipient in enumerate(recipients):
                 try:
                     # Create message
@@ -78,11 +85,11 @@ class WebEmailSender:
                     msg['From'] = self.smtp_config['sender_email']
                     msg['To'] = recipient
                     msg['Subject'] = content['subject']
-                    
+
                     # Add body
                     body_type = 'html' if content.get('is_html', False) else 'plain'
                     msg.attach(MIMEText(content['body'], body_type))
-                    
+
                     # Add attachments
                     if attachments:
                         for attachment_path in attachments:
@@ -90,45 +97,41 @@ class WebEmailSender:
                                 with open(attachment_path, "rb") as attachment:
                                     part = MIMEBase('application', 'octet-stream')
                                     part.set_payload(attachment.read())
-                                
+
                                 encoders.encode_base64(part)
                                 part.add_header(
                                     'Content-Disposition',
                                     f'attachment; filename= {os.path.basename(attachment_path)}'
                                 )
                                 msg.attach(part)
-                    
+
                     # Send email
                     server.sendmail(
                         self.smtp_config['sender_email'],
                         recipient,
                         msg.as_string()
                     )
-                    
+
                     results["sent"] += 1
-                    
+                    time.sleep(1)  # Rate limiting
+
                 except Exception as e:
                     results["failed"] += 1
                     results["failed_recipients"].append({"email": recipient, "error": str(e)})
-                
-                # Update progress
-                if self.progress_callback:
-                    self.progress_callback(results)
-            
+
             server.quit()
             results["end_time"] = datetime.now().isoformat()
-            
+
         except Exception as e:
             results["smtp_error"] = str(e)
             results["end_time"] = datetime.now().isoformat()
-        
+
         return results
 
 # Routes
 @app.route('/')
 def index():
     """Main dashboard"""
-    # Load configuration status for dashboard
     system_status = config_manager.get_system_status()
     return render_template('index.html', system_status=system_status)
 
@@ -139,7 +142,7 @@ def test_smtp():
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "message": "No data provided"})
-        
+
         server = smtplib.SMTP(data['host'], data['port'])
         if data.get('use_tls', True):
             server.starttls()
@@ -156,15 +159,15 @@ def validate_emails():
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "message": "No data provided"})
-        
+
         emails = data.get('emails', [])
-        
+
         valid_emails = []
         invalid_emails = []
-        
+
         for email in emails:
             email = email.strip().lower()
-            if EmailValidator.is_valid_email(email):
+            if validate_email_address(email):
                 if email not in [e['email'] for e in valid_emails]:  # Deduplicate
                     valid_emails.append({
                         "email": email,
@@ -175,7 +178,7 @@ def validate_emails():
                     "email": email,
                     "status": "invalid"
                 })
-        
+
         return jsonify({
             "success": True,
             "valid_emails": valid_emails,
@@ -192,41 +195,41 @@ def upload_csv():
     try:
         if 'file' not in request.files:
             return jsonify({"success": False, "message": "No file uploaded"})
-        
+
         file = request.files['file']
         if file.filename == '':
             return jsonify({"success": False, "message": "No file selected"})
-        
+
         if file and file.filename and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             filepath = UPLOAD_FOLDER / filename
             file.save(filepath)
-            
+
             # Process CSV
             df = pd.read_csv(filepath)
-            
+
             # Find email columns
             email_columns = [col for col in df.columns if 'email' in col.lower()]
             if not email_columns:
                 return jsonify({"success": False, "message": "No email column found in CSV"})
-            
+
             email_col = email_columns[0]
             raw_emails = df[email_col].dropna().astype(str).tolist()
-            
+
             # Also extract other useful columns
             other_data = []
             for _, row in df.iterrows():
                 email = str(row[email_col]).strip().lower()
-                if EmailValidator.is_valid_email(email):
+                if validate_email_address(email):
                     row_data = {"email": email}
                     for col in df.columns:
                         if col != email_col:
                             row_data[col] = str(row[col]) if pd.notna(row[col]) else ""
                     other_data.append(row_data)
-            
+
             # Clean up file
             os.remove(filepath)
-            
+
             return jsonify({
                 "success": True,
                 "message": f"Successfully processed {len(other_data)} valid emails",
@@ -234,9 +237,9 @@ def upload_csv():
                 "total_processed": len(raw_emails),
                 "total_valid": len(other_data)
             })
-        
+
         return jsonify({"success": False, "message": "Invalid file type"})
-    
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -246,11 +249,11 @@ def upload_attachment():
     try:
         if 'file' not in request.files:
             return jsonify({"success": False, "message": "No file uploaded"})
-        
+
         file = request.files['file']
         if file.filename == '':
             return jsonify({"success": False, "message": "No file selected"})
-        
+
         if file and file.filename and allowed_file(file.filename):
             # Generate unique filename
             file_id = str(uuid.uuid4())
@@ -258,7 +261,7 @@ def upload_attachment():
             new_filename = f"{file_id}_{filename}"
             filepath = UPLOAD_FOLDER / new_filename
             file.save(filepath)
-            
+
             file_info = {
                 "id": file_id,
                 "original_name": filename,
@@ -266,15 +269,15 @@ def upload_attachment():
                 "size": os.path.getsize(filepath),
                 "path": str(filepath)
             }
-            
+
             return jsonify({
                 "success": True,
                 "message": "File uploaded successfully",
                 "file": file_info
             })
-        
+
         return jsonify({"success": False, "message": "Invalid file type"})
-    
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -285,27 +288,27 @@ def send_emails():
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "message": "No data provided"})
-        
+
         # Validate required data
         smtp_config = data.get('smtp_config')
         content = data.get('content')
         recipients = data.get('recipients', [])
         attachments = data.get('attachments', [])
         dry_run = data.get('dry_run', False)
-        
+
         if not smtp_config or not content or not recipients:
             return jsonify({"success": False, "message": "Missing required data"})
-        
+
         # Create sender
         sender = WebEmailSender(smtp_config)
-        
+
         # Prepare attachment paths
         attachment_paths = []
         for attachment in attachments:
             file_path = UPLOAD_FOLDER / attachment['stored_name']
             if file_path.exists():
                 attachment_paths.append(str(file_path))
-        
+
         # Send emails
         results = sender.send_emails_async(
             content=content,
@@ -313,12 +316,12 @@ def send_emails():
             attachments=attachment_paths,
             dry_run=dry_run
         )
-        
+
         return jsonify({
             "success": True,
             "results": results
         })
-    
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -329,234 +332,17 @@ def cleanup_files():
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "message": "No data provided"})
-        
+
         file_ids = data.get('file_ids', [])
-        
+
         for file_id in file_ids:
             # Find and remove files with this ID
             for file_path in UPLOAD_FOLDER.glob(f"{file_id}_*"):
                 if file_path.exists():
                     os.remove(file_path)
-        
+
         return jsonify({"success": True, "message": "Files cleaned up"})
-    
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
 
-# File-based Configuration API Endpoints
-@app.route('/api/config/smtp-servers', methods=['GET'])
-def get_smtp_servers():
-    """Get all SMTP server configurations"""
-    try:
-        servers = config_manager.get_smtp_servers()
-        # Remove passwords from response for security
-        safe_servers = []
-        for server in servers:
-            safe_server = server.copy()
-            safe_server['password'] = '***' if server.get('password') else ''
-            safe_servers.append(safe_server)
-        
-        return jsonify({
-            "success": True,
-            "smtp_servers": safe_servers
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/email-lists', methods=['GET'])
-def get_email_lists():
-    """Get all email lists"""
-    try:
-        lists = config_manager.get_email_lists()
-        return jsonify({
-            "success": True,
-            "email_lists": lists
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/email-lists/<list_name>', methods=['POST'])
-def load_email_list(list_name):
-    """Load a specific email list"""
-    try:
-        emails = config_manager.get_email_list(list_name)
-        return jsonify({
-            "success": True,
-            "message": f"Loaded {len(emails)} emails from {list_name}",
-            "emails": emails
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/templates', methods=['GET'])
-def get_email_templates():
-    """Get all email templates"""
-    try:
-        templates = config_manager.get_email_templates()
-        return jsonify({
-            "success": True,
-            "templates": templates
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/templates/<template_name>', methods=['POST'])
-def load_email_template(template_name):
-    """Load a specific email template"""
-    try:
-        data = request.get_json()
-        variables = data.get('variables', {}) if data else {}
-        
-        if variables:
-            # Render template with variables
-            rendered_template = config_manager.render_template(template_name, variables)
-        else:
-            # Get raw template
-            rendered_template = config_manager.get_email_template(template_name)
-        
-        if rendered_template:
-            return jsonify({
-                "success": True,
-                "template": rendered_template
-            })
-        else:
-            return jsonify({"success": False, "message": "Template not found"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/campaigns', methods=['GET'])
-def get_campaigns():
-    """Get all campaign configurations"""
-    try:
-        campaigns = config_manager.get_campaigns()
-        return jsonify({
-            "success": True,
-            "campaigns": campaigns
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/campaigns/<campaign_name>/run', methods=['POST'])
-def run_campaign(campaign_name):
-    """Run a pre-configured campaign"""
-    try:
-        campaign = config_manager.get_campaign(campaign_name)
-        if not campaign:
-            return jsonify({"success": False, "message": "Campaign not found"})
-        
-        # Get SMTP configuration
-        smtp_server_name = campaign.get('smtp_server')
-        smtp_servers = config_manager.get_smtp_servers()
-        smtp_config = None
-        
-        for server in smtp_servers:
-            if server.get('name') == smtp_server_name:
-                smtp_config = server
-                break
-        
-        if not smtp_config:
-            return jsonify({"success": False, "message": "SMTP server not found"})
-        
-        # Get email list
-        email_list_name = campaign.get('email_list')
-        recipients = config_manager.get_email_list(email_list_name)
-        
-        if not recipients:
-            return jsonify({"success": False, "message": "Email list not found or empty"})
-        
-        # Get and render template
-        template_name = campaign.get('template')
-        template_variables = campaign.get('template_variables', {})
-        
-        # Create SMTP config object
-        from termsender import SMTPConfig
-        smtp_obj = SMTPConfig(
-            host=smtp_config['host'],
-            port=smtp_config['port'],
-            username=smtp_config['username'],
-            password=smtp_config['password'],
-            use_tls=smtp_config.get('use_tls', True)
-        )
-        
-        # Create sender
-        sender = WebEmailSender(smtp_obj)
-        
-        # Process template for each recipient
-        results = {"sent": 0, "failed": 0, "failed_recipients": [], "total": len(recipients)}
-        
-        # Get campaign settings
-        campaign_settings = campaign.get('settings', config_manager.get_default_settings())
-        send_mode = campaign_settings.get('send_mode', 'dry_run')
-        
-        for recipient in recipients:
-            try:
-                # Merge recipient data with template variables
-                render_vars = template_variables.copy()
-                render_vars.update(recipient)
-                
-                # Render template
-                content = config_manager.render_template(template_name, render_vars)
-                if not content:
-                    results["failed"] += 1
-                    results["failed_recipients"].append({
-                        "email": recipient.get('email', 'unknown'),
-                        "error": "Template rendering failed"
-                    })
-                    continue
-                
-                # Create email content object
-                from termsender import EmailContent
-                email_content = EmailContent(
-                    subject=content['subject'],
-                    body=content['body'],
-                    is_html=content.get('is_html', False)
-                )
-                
-                # Send email based on mode
-                if send_mode == 'live':
-                    sender_email = smtp_config.get('sender_email', smtp_config['username'])
-                    sender.send_email(sender_email, [recipient['email']], email_content)
-                
-                results["sent"] += 1
-                
-            except Exception as e:
-                results["failed"] += 1
-                results["failed_recipients"].append({
-                    "email": recipient.get('email', 'unknown'),
-                    "error": str(e)
-                })
-        
-        return jsonify({
-            "success": True,
-            "results": results,
-            "campaign": campaign_name
-        })
-        
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/status', methods=['GET'])
-def get_config_status():
-    """Get system configuration status"""
-    try:
-        status = config_manager.get_system_status()
-        return jsonify({
-            "success": True,
-            "status": status
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/config/backup', methods=['POST'])
-def backup_configs():
-    """Create backup of all configuration files"""
-    try:
-        backup_path = config_manager.backup_configs()
-        return jsonify({
-            "success": True,
-            "message": f"Configuration backup created: {backup_path}",
-            "backup_path": backup_path
-        })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 

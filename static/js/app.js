@@ -1,3 +1,4 @@
+
 /**
  * TermSender Pro - JavaScript Application
  * Modern email campaign management interface
@@ -11,14 +12,17 @@ class TermSenderApp {
         this.recipients = [];
         this.attachments = [];
         this.isReady = false;
+        this.isLoading = false;
         
         this.init();
     }
 
     init() {
+        console.log('Initializing TermSender Pro...');
         this.setupEventListeners();
         this.showComplianceModal();
         this.updateDashboard();
+        console.log('TermSender Pro initialized successfully');
     }
 
     setupEventListeners() {
@@ -68,22 +72,30 @@ class TermSenderApp {
         const smtpForm = document.getElementById('smtpForm');
         const testBtn = document.getElementById('testSmtpBtn');
 
-        smtpForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveSMTPConfig();
-        });
+        if (smtpForm) {
+            smtpForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveSMTPConfig();
+            });
+        }
 
-        testBtn.addEventListener('click', () => {
-            this.testSMTPConnection();
-        });
+        if (testBtn) {
+            testBtn.addEventListener('click', () => {
+                this.testSMTPConnection();
+            });
+        }
 
         // Auto-fill sender email when username changes
-        document.getElementById('smtpUsername').addEventListener('input', (e) => {
-            const senderEmail = document.getElementById('senderEmail');
-            if (!senderEmail.value) {
-                senderEmail.value = e.target.value;
-            }
-        });
+        const smtpUsername = document.getElementById('smtpUsername');
+        const senderEmail = document.getElementById('senderEmail');
+        
+        if (smtpUsername && senderEmail) {
+            smtpUsername.addEventListener('input', (e) => {
+                if (!senderEmail.value) {
+                    senderEmail.value = e.target.value;
+                }
+            });
+        }
     }
 
     setupRecipientsEventListeners() {
@@ -92,45 +104,57 @@ class TermSenderApp {
         const csvFileInput = document.getElementById('csvFileInput');
         const csvBrowseBtn = document.getElementById('csvBrowseBtn');
 
-        // File drag and drop
-        csvDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            csvDropZone.classList.add('dragover');
-        });
+        if (csvDropZone && csvFileInput && csvBrowseBtn) {
+            // File drag and drop
+            csvDropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                csvDropZone.classList.add('dragover');
+            });
 
-        csvDropZone.addEventListener('dragleave', () => {
-            csvDropZone.classList.remove('dragover');
-        });
+            csvDropZone.addEventListener('dragleave', () => {
+                csvDropZone.classList.remove('dragover');
+            });
 
-        csvDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            csvDropZone.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.handleCSVUpload(files[0]);
-            }
-        });
+            csvDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                csvDropZone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.handleCSVUpload(files[0]);
+                }
+            });
 
-        csvBrowseBtn.addEventListener('click', () => csvFileInput.click());
-        csvFileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.handleCSVUpload(e.target.files[0]);
-            }
-        });
+            csvBrowseBtn.addEventListener('click', () => csvFileInput.click());
+            csvFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.handleCSVUpload(e.target.files[0]);
+                }
+            });
+        }
 
         // Manual entry
-        document.getElementById('addManualBtn').addEventListener('click', () => {
-            this.addManualEmails();
-        });
+        const addManualBtn = document.getElementById('addManualBtn');
+        if (addManualBtn) {
+            addManualBtn.addEventListener('click', () => {
+                this.addManualEmails();
+            });
+        }
 
         // Recipients actions
-        document.getElementById('validateEmailsBtn').addEventListener('click', () => {
-            this.validateAllEmails();
-        });
+        const validateEmailsBtn = document.getElementById('validateEmailsBtn');
+        const clearRecipientsBtn = document.getElementById('clearRecipientsBtn');
+        
+        if (validateEmailsBtn) {
+            validateEmailsBtn.addEventListener('click', () => {
+                this.validateAllEmails();
+            });
+        }
 
-        document.getElementById('clearRecipientsBtn').addEventListener('click', () => {
-            this.clearAllRecipients();
-        });
+        if (clearRecipientsBtn) {
+            clearRecipientsBtn.addEventListener('click', () => {
+                this.clearAllRecipients();
+            });
+        }
     }
 
     setupComposeEventListeners() {
@@ -140,10 +164,12 @@ class TermSenderApp {
         const emailBody = document.getElementById('emailBody');
         const emailBodyPlain = document.getElementById('emailBodyPlain');
 
-        composeForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveEmailContent();
-        });
+        if (composeForm) {
+            composeForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveEmailContent();
+            });
+        }
 
         // Format tabs
         formatTabs.forEach(tab => {
@@ -154,9 +180,15 @@ class TermSenderApp {
         });
 
         // Live preview
-        emailSubject.addEventListener('input', () => this.updatePreview());
-        emailBody.addEventListener('input', () => this.updatePreview());
-        emailBodyPlain.addEventListener('input', () => this.updatePreview());
+        if (emailSubject) {
+            emailSubject.addEventListener('input', () => this.updatePreview());
+        }
+        if (emailBody) {
+            emailBody.addEventListener('input', () => this.updatePreview());
+        }
+        if (emailBodyPlain) {
+            emailBodyPlain.addEventListener('input', () => this.updatePreview());
+        }
 
         // Rich text editor toolbar
         document.querySelectorAll('.toolbar-btn').forEach(btn => {
@@ -172,51 +204,65 @@ class TermSenderApp {
         const attachmentFileInput = document.getElementById('attachmentFileInput');
         const attachmentBrowseBtn = document.getElementById('attachmentBrowseBtn');
 
-        // File drag and drop
-        attachmentDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            attachmentDropZone.classList.add('dragover');
-        });
+        if (attachmentDropZone && attachmentFileInput && attachmentBrowseBtn) {
+            // File drag and drop
+            attachmentDropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                attachmentDropZone.classList.add('dragover');
+            });
 
-        attachmentDropZone.addEventListener('dragleave', () => {
-            attachmentDropZone.classList.remove('dragover');
-        });
+            attachmentDropZone.addEventListener('dragleave', () => {
+                attachmentDropZone.classList.remove('dragover');
+            });
 
-        attachmentDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            attachmentDropZone.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            for (let file of files) {
-                this.handleAttachmentUpload(file);
-            }
-        });
+            attachmentDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                attachmentDropZone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                for (let file of files) {
+                    this.handleAttachmentUpload(file);
+                }
+            });
 
-        attachmentBrowseBtn.addEventListener('click', () => attachmentFileInput.click());
-        attachmentFileInput.addEventListener('change', (e) => {
-            for (let file of e.target.files) {
-                this.handleAttachmentUpload(file);
-            }
-        });
+            attachmentBrowseBtn.addEventListener('click', () => attachmentFileInput.click());
+            attachmentFileInput.addEventListener('change', (e) => {
+                for (let file of e.target.files) {
+                    this.handleAttachmentUpload(file);
+                }
+            });
+        }
     }
 
     setupSendEventListeners() {
-        document.getElementById('launchBtn').addEventListener('click', () => {
-            this.launchCampaign();
-        });
+        const launchBtn = document.getElementById('launchBtn');
+        if (launchBtn) {
+            launchBtn.addEventListener('click', () => {
+                this.launchCampaign();
+            });
+        }
     }
 
     setupComplianceEventListeners() {
-        document.getElementById('acceptCompliance').addEventListener('click', () => {
-            this.acceptCompliance();
-        });
+        const acceptBtn = document.getElementById('acceptCompliance');
+        const declineBtn = document.getElementById('declineCompliance');
+        
+        if (acceptBtn) {
+            acceptBtn.addEventListener('click', () => {
+                this.acceptCompliance();
+            });
+        }
 
-        document.getElementById('declineCompliance').addEventListener('click', () => {
-            this.declineCompliance();
-        });
+        if (declineBtn) {
+            declineBtn.addEventListener('click', () => {
+                this.declineCompliance();
+            });
+        }
     }
 
     // Navigation
     navigateToSection(section) {
+        console.log(`Navigating to section: ${section}`);
+        
         // Update nav items
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
@@ -230,7 +276,11 @@ class TermSenderApp {
             section_el.classList.remove('active');
         });
 
-        document.getElementById(section).classList.add('active');
+        const targetSection = document.getElementById(section);
+        if (targetSection) {
+            targetSection.classList.add('active');
+        }
+        
         this.currentSection = section;
 
         // Update send section summary when navigating to it
@@ -261,6 +311,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('SMTP test error:', error);
             this.showNotification('Failed to test SMTP connection', 'error');
         } finally {
             this.hideLoading();
@@ -271,7 +322,6 @@ class TermSenderApp {
         const formData = this.getSMTPFormData();
         if (!formData) return;
 
-        // Test connection first
         this.showLoading();
         
         try {
@@ -292,6 +342,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('SMTP save error:', error);
             this.showNotification('Failed to save SMTP configuration', 'error');
         } finally {
             this.hideLoading();
@@ -299,12 +350,12 @@ class TermSenderApp {
     }
 
     getSMTPFormData() {
-        const host = document.getElementById('smtpHost').value.trim();
-        const port = parseInt(document.getElementById('smtpPort').value);
-        const username = document.getElementById('smtpUsername').value.trim();
-        const password = document.getElementById('smtpPassword').value;
-        const senderEmail = document.getElementById('senderEmail').value.trim();
-        const useTls = document.getElementById('useTls').checked;
+        const host = document.getElementById('smtpHost')?.value?.trim();
+        const port = parseInt(document.getElementById('smtpPort')?.value);
+        const username = document.getElementById('smtpUsername')?.value?.trim();
+        const password = document.getElementById('smtpPassword')?.value;
+        const senderEmail = document.getElementById('senderEmail')?.value?.trim();
+        const useTls = document.getElementById('useTls')?.checked;
 
         if (!host || !port || !username || !password || !senderEmail) {
             this.showNotification('Please fill in all SMTP fields', 'error');
@@ -344,6 +395,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('CSV upload error:', error);
             this.showNotification('Failed to upload CSV file', 'error');
         } finally {
             this.hideLoading();
@@ -351,7 +403,7 @@ class TermSenderApp {
     }
 
     async addManualEmails() {
-        const manualEmails = document.getElementById('manualEmails').value.trim();
+        const manualEmails = document.getElementById('manualEmails')?.value?.trim();
         if (!manualEmails) {
             this.showNotification('Please enter email addresses', 'error');
             return;
@@ -392,6 +444,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('Email validation error:', error);
             this.showNotification('Failed to validate emails', 'error');
         } finally {
             this.hideLoading();
@@ -430,6 +483,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('Validation error:', error);
             this.showNotification('Failed to validate emails', 'error');
         } finally {
             this.hideLoading();
@@ -453,6 +507,7 @@ class TermSenderApp {
 
     updateRecipientsTable() {
         const tbody = document.querySelector('#recipientsTable tbody');
+        if (!tbody) return;
         
         if (this.recipients.length === 0) {
             tbody.innerHTML = `
@@ -505,6 +560,8 @@ class TermSenderApp {
         const plainEditor = document.getElementById('emailBodyPlain');
         const toolbar = document.getElementById('editorToolbar');
 
+        if (!htmlEditor || !plainEditor || !toolbar) return;
+
         formatTabs.forEach(tab => {
             tab.classList.remove('active');
             if (tab.dataset.format === format) {
@@ -539,32 +596,41 @@ class TermSenderApp {
     }
 
     updatePreview() {
-        const subject = document.getElementById('emailSubject').value;
-        const isHtml = document.querySelector('.format-tab.active').dataset.format === 'html';
-        const body = isHtml ? 
-            document.getElementById('emailBody').innerHTML : 
-            document.getElementById('emailBodyPlain').value;
-
-        document.getElementById('previewSubject').textContent = subject || 'No subject';
+        const subject = document.getElementById('emailSubject')?.value || '';
+        const activeTab = document.querySelector('.format-tab.active');
+        const isHtml = activeTab ? activeTab.dataset.format === 'html' : false;
         
+        const body = isHtml ? 
+            document.getElementById('emailBody')?.innerHTML || '' : 
+            document.getElementById('emailBodyPlain')?.value || '';
+
+        const previewSubject = document.getElementById('previewSubject');
         const previewBody = document.getElementById('previewBody');
-        if (body.trim()) {
-            if (isHtml) {
-                previewBody.innerHTML = body;
+        
+        if (previewSubject) {
+            previewSubject.textContent = subject || 'No subject';
+        }
+        
+        if (previewBody) {
+            if (body.trim()) {
+                if (isHtml) {
+                    previewBody.innerHTML = body;
+                } else {
+                    previewBody.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${body}</pre>`;
+                }
             } else {
-                previewBody.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${body}</pre>`;
+                previewBody.innerHTML = '<p class="empty-preview">Start typing to see preview</p>';
             }
-        } else {
-            previewBody.innerHTML = '<p class="empty-preview">Start typing to see preview</p>';
         }
     }
 
     saveEmailContent() {
-        const subject = document.getElementById('emailSubject').value.trim();
-        const isHtml = document.querySelector('.format-tab.active').dataset.format === 'html';
+        const subject = document.getElementById('emailSubject')?.value?.trim();
+        const activeTab = document.querySelector('.format-tab.active');
+        const isHtml = activeTab ? activeTab.dataset.format === 'html' : false;
         const body = isHtml ? 
-            document.getElementById('emailBody').innerHTML.trim() : 
-            document.getElementById('emailBodyPlain').value.trim();
+            document.getElementById('emailBody')?.innerHTML?.trim() : 
+            document.getElementById('emailBodyPlain')?.value?.trim();
 
         if (!subject || !body) {
             this.showNotification('Please fill in both subject and body', 'error');
@@ -607,6 +673,7 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('Attachment upload error:', error);
             this.showNotification('Failed to upload file', 'error');
         } finally {
             this.hideLoading();
@@ -615,6 +682,7 @@ class TermSenderApp {
 
     updateAttachmentsGrid() {
         const grid = document.getElementById('attachmentsGrid');
+        if (!grid) return;
         
         if (this.attachments.length === 0) {
             grid.innerHTML = `
@@ -680,21 +748,30 @@ class TermSenderApp {
 
     // Send Campaign
     updateSendSummary() {
-        document.getElementById('summarySubject').textContent = this.emailContent?.subject || '-';
-        document.getElementById('summaryRecipients').textContent = this.recipients.length.toString();
-        document.getElementById('summaryAttachments').textContent = this.attachments.length.toString();
-        document.getElementById('summarySmtp').textContent = this.smtpConfig?.host || '-';
+        const summarySubject = document.getElementById('summarySubject');
+        const summaryRecipients = document.getElementById('summaryRecipients');
+        const summaryAttachments = document.getElementById('summaryAttachments');
+        const summarySmtp = document.getElementById('summarySmtp');
+        
+        if (summarySubject) summarySubject.textContent = this.emailContent?.subject || '-';
+        if (summaryRecipients) summaryRecipients.textContent = this.recipients.length.toString();
+        if (summaryAttachments) summaryAttachments.textContent = this.attachments.length.toString();
+        if (summarySmtp) summarySmtp.textContent = this.smtpConfig?.host || '-';
 
         // Check if ready to send
         const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
         const launchBtn = document.getElementById('launchBtn');
         
-        if (isReady) {
-            launchBtn.disabled = false;
-            launchBtn.querySelector('span').textContent = 'Launch Campaign';
-        } else {
-            launchBtn.disabled = true;
-            launchBtn.querySelector('span').textContent = 'Complete Setup First';
+        if (launchBtn) {
+            if (isReady) {
+                launchBtn.disabled = false;
+                const span = launchBtn.querySelector('span');
+                if (span) span.textContent = 'Launch Campaign';
+            } else {
+                launchBtn.disabled = true;
+                const span = launchBtn.querySelector('span');
+                if (span) span.textContent = 'Complete Setup First';
+            }
         }
     }
 
@@ -704,7 +781,8 @@ class TermSenderApp {
             return;
         }
 
-        const sendMode = document.querySelector('input[name="sendMode"]:checked').value;
+        const sendModeElement = document.querySelector('input[name="sendMode"]:checked');
+        const sendMode = sendModeElement ? sendModeElement.value : 'dry_run';
         const isDryRun = sendMode === 'dry_run';
 
         if (!isDryRun && !confirm(`Are you sure you want to send ${this.recipients.length} emails? This action cannot be undone.`)) {
@@ -712,15 +790,14 @@ class TermSenderApp {
         }
 
         // Show progress section
-        document.getElementById('progressSection').style.display = 'block';
-        document.getElementById('resultsSection').style.display = 'none';
+        const progressSection = document.getElementById('progressSection');
+        const resultsSection = document.getElementById('resultsSection');
+        
+        if (progressSection) progressSection.style.display = 'block';
+        if (resultsSection) resultsSection.style.display = 'none';
         
         // Reset progress
-        document.getElementById('progressFill').style.width = '0%';
-        document.getElementById('sentCount').textContent = '0';
-        document.getElementById('failedCount').textContent = '0';
-        document.getElementById('totalCount').textContent = this.recipients.length.toString();
-        document.getElementById('liveLog').innerHTML = '';
+        this.resetProgress();
 
         const payload = {
             smtp_config: this.smtpConfig,
@@ -746,60 +823,101 @@ class TermSenderApp {
                 this.showNotification(result.message, 'error');
             }
         } catch (error) {
+            console.error('Campaign launch error:', error);
             this.showNotification('Failed to launch campaign', 'error');
         }
     }
 
+    resetProgress() {
+        const progressFill = document.getElementById('progressFill');
+        const sentCount = document.getElementById('sentCount');
+        const failedCount = document.getElementById('failedCount');
+        const totalCount = document.getElementById('totalCount');
+        const liveLog = document.getElementById('liveLog');
+        
+        if (progressFill) progressFill.style.width = '0%';
+        if (sentCount) sentCount.textContent = '0';
+        if (failedCount) failedCount.textContent = '0';
+        if (totalCount) totalCount.textContent = this.recipients.length.toString();
+        if (liveLog) liveLog.innerHTML = '';
+    }
+
     displayCampaignResults(results) {
         // Update progress bar
-        const progressPercent = (results.sent / results.total) * 100;
-        document.getElementById('progressFill').style.width = progressPercent + '%';
-        document.getElementById('sentCount').textContent = results.sent.toString();
-        document.getElementById('failedCount').textContent = results.failed.toString();
+        const progressPercent = results.total > 0 ? (results.sent / results.total) * 100 : 0;
+        
+        const progressFill = document.getElementById('progressFill');
+        const sentCount = document.getElementById('sentCount');
+        const failedCount = document.getElementById('failedCount');
+        
+        if (progressFill) progressFill.style.width = progressPercent + '%';
+        if (sentCount) sentCount.textContent = results.sent.toString();
+        if (failedCount) failedCount.textContent = results.failed.toString();
 
         // Show results
         setTimeout(() => {
-            document.getElementById('resultsSection').style.display = 'block';
-            
-            const resultsContainer = document.getElementById('resultsContainer');
-            resultsContainer.innerHTML = `
-                <div class="results-summary">
-                    <div class="result-stat ${results.sent > 0 ? 'success' : ''}">
-                        <i class="fas fa-check-circle"></i>
-                        <div>
-                            <span class="result-number">${results.sent}</span>
-                            <span class="result-label">Sent Successfully</span>
-                        </div>
-                    </div>
-                    <div class="result-stat ${results.failed > 0 ? 'error' : ''}">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <div>
-                            <span class="result-number">${results.failed}</span>
-                            <span class="result-label">Failed</span>
-                        </div>
-                    </div>
-                    <div class="result-stat">
-                        <i class="fas fa-clock"></i>
-                        <div>
-                            <span class="result-number">${this.calculateDuration(results.start_time, results.end_time)}</span>
-                            <span class="result-label">Duration</span>
-                        </div>
-                    </div>
-                </div>
-                ${results.dry_run ? '<div class="dry-run-notice"><i class="fas fa-info-circle"></i> This was a test run - no emails were actually sent</div>' : ''}
-                ${results.failed_recipients && results.failed_recipients.length > 0 ? `
-                    <div class="failed-recipients">
-                        <h4>Failed Recipients</h4>
-                        <ul>
-                            ${results.failed_recipients.map(fr => `<li>${fr.email}: ${fr.error}</li>`).join('')}
-                        </ul>
-                    </div>
-                ` : ''}
-            `;
+            const resultsSection = document.getElementById('resultsSection');
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+                
+                const resultsContainer = document.getElementById('resultsContainer');
+                if (resultsContainer) {
+                    resultsContainer.innerHTML = this.generateResultsHTML(results);
+                }
+            }
         }, 1000);
     }
 
+    generateResultsHTML(results) {
+        const duration = this.calculateDuration(results.start_time, results.end_time);
+        
+        let html = `
+            <div class="results-summary">
+                <div class="result-stat ${results.sent > 0 ? 'success' : ''}">
+                    <i class="fas fa-check-circle"></i>
+                    <div>
+                        <span class="result-number">${results.sent}</span>
+                        <span class="result-label">Sent Successfully</span>
+                    </div>
+                </div>
+                <div class="result-stat ${results.failed > 0 ? 'error' : ''}">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div>
+                        <span class="result-number">${results.failed}</span>
+                        <span class="result-label">Failed</span>
+                    </div>
+                </div>
+                <div class="result-stat">
+                    <i class="fas fa-clock"></i>
+                    <div>
+                        <span class="result-number">${duration}</span>
+                        <span class="result-label">Duration</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (results.dry_run) {
+            html += '<div class="dry-run-notice"><i class="fas fa-info-circle"></i> This was a test run - no emails were actually sent</div>';
+        }
+        
+        if (results.failed_recipients && results.failed_recipients.length > 0) {
+            html += `
+                <div class="failed-recipients">
+                    <h4>Failed Recipients</h4>
+                    <ul>
+                        ${results.failed_recipients.slice(0, 5).map(fr => `<li>${fr.email}: ${fr.error}</li>`).join('')}
+                    </ul>
+                    ${results.failed_recipients.length > 5 ? `<p>... and ${results.failed_recipients.length - 5} more</p>` : ''}
+                </div>
+            `;
+        }
+        
+        return html;
+    }
+
     calculateDuration(start, end) {
+        if (!start || !end) return '0s';
         const duration = new Date(end) - new Date(start);
         const seconds = Math.floor(duration / 1000);
         return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
@@ -809,44 +927,60 @@ class TermSenderApp {
     updateDashboard() {
         // Update SMTP status
         const smtpStatus = document.getElementById('smtpStatus');
-        if (this.smtpConfig) {
-            smtpStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Configured</span>';
-        } else {
-            smtpStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Configured</span>';
+        if (smtpStatus) {
+            if (this.smtpConfig) {
+                smtpStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Configured</span>';
+            } else {
+                smtpStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Configured</span>';
+            }
         }
 
         // Update recipients status
         const recipientsStatus = document.getElementById('recipientsStatus');
-        if (this.recipients.length > 0) {
-            recipientsStatus.innerHTML = `<i class="fas fa-circle status-success"></i><span>${this.recipients.length} Recipients</span>`;
-        } else {
-            recipientsStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>0 Recipients</span>';
+        if (recipientsStatus) {
+            if (this.recipients.length > 0) {
+                recipientsStatus.innerHTML = `<i class="fas fa-circle status-success"></i><span>${this.recipients.length} Recipients</span>`;
+            } else {
+                recipientsStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>0 Recipients</span>';
+            }
         }
 
         // Update compose status
         const composeStatus = document.getElementById('composeStatus');
-        if (this.emailContent) {
-            composeStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Content Ready</span>';
-        } else {
-            composeStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Composed</span>';
+        if (composeStatus) {
+            if (this.emailContent) {
+                composeStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Content Ready</span>';
+            } else {
+                composeStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Composed</span>';
+            }
         }
 
         // Update launch status
         const launchStatus = document.getElementById('launchStatus');
-        const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
-        if (isReady) {
-            launchStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Ready to Launch</span>';
-        } else {
-            launchStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Ready</span>';
+        if (launchStatus) {
+            const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
+            if (isReady) {
+                launchStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Ready to Launch</span>';
+            } else {
+                launchStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Ready</span>';
+            }
         }
 
         // Update sidebar stats
-        document.getElementById('totalRecipients').textContent = this.recipients.length.toString();
-        document.getElementById('readyToSend').textContent = isReady ? 'Yes' : 'No';
+        const totalRecipients = document.getElementById('totalRecipients');
+        const readyToSend = document.getElementById('readyToSend');
+        
+        if (totalRecipients) totalRecipients.textContent = this.recipients.length.toString();
+        if (readyToSend) {
+            const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
+            readyToSend.textContent = isReady ? 'Yes' : 'No';
+        }
     }
 
     addActivity(message) {
         const activityList = document.getElementById('activityList');
+        if (!activityList) return;
+        
         const time = new Date().toLocaleTimeString();
         
         const activityItem = document.createElement('div');
@@ -868,11 +1002,17 @@ class TermSenderApp {
 
     // Compliance Modal
     showComplianceModal() {
-        document.getElementById('complianceModal').style.display = 'flex';
+        const modal = document.getElementById('complianceModal');
+        if (modal) {
+            modal.style.display = 'flex';
+        }
     }
 
     acceptCompliance() {
-        document.getElementById('complianceModal').style.display = 'none';
+        const modal = document.getElementById('complianceModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
         this.showNotification('Welcome to TermSender Pro!', 'success');
         this.addActivity('Compliance agreement accepted');
     }
@@ -884,6 +1024,8 @@ class TermSenderApp {
     // UI Helpers
     showNotification(message, type = 'info') {
         const container = document.getElementById('notificationContainer');
+        if (!container) return;
+        
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
@@ -899,115 +1041,32 @@ class TermSenderApp {
     }
 
     showLoading() {
-        document.getElementById('loadingOverlay').style.display = 'flex';
+        if (this.isLoading) return;
+        this.isLoading = true;
+        
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+        }
     }
 
     hideLoading() {
-        document.getElementById('loadingOverlay').style.display = 'none';
+        this.isLoading = false;
+        
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
     }
 }
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing TermSender Pro...');
     window.app = new TermSenderApp();
 });
 
-// Additional CSS for results styling
-const additionalCSS = `
-.results-summary {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-
-.result-stat {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: var(--bg-tertiary);
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-}
-
-.result-stat.success {
-    border-color: var(--brand-success);
-    background: rgba(34, 197, 94, 0.1);
-}
-
-.result-stat.error {
-    border-color: var(--brand-danger);
-    background: rgba(239, 68, 68, 0.1);
-}
-
-.result-stat i {
-    font-size: 1.5rem;
-    color: var(--brand-primary);
-}
-
-.result-stat.success i {
-    color: var(--brand-success);
-}
-
-.result-stat.error i {
-    color: var(--brand-danger);
-}
-
-.result-number {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.result-label {
-    display: block;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.dry-run-notice {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid var(--brand-warning);
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    color: var(--brand-warning);
-    text-align: center;
-}
-
-.failed-recipients {
-    background: var(--bg-tertiary);
-    border-radius: 8px;
-    padding: 1rem;
-}
-
-.failed-recipients h4 {
-    color: var(--brand-danger);
-    margin-bottom: 0.5rem;
-}
-
-.failed-recipients ul {
-    margin: 0;
-    padding-left: 1.5rem;
-}
-
-.failed-recipients li {
-    color: var(--text-secondary);
-    margin-bottom: 0.25rem;
-}
-
-.btn-sm {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.8rem;
-    min-height: 32px;
-}
-`;
-
-// Inject additional CSS
-const style = document.createElement('style');
-style.textContent = additionalCSS;
-document.head.appendChild(style);
+// Additional error handling
+window.addEventListener('error', (e) => {
+    console.error('JavaScript error:', e.error);
+});
