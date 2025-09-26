@@ -1,33 +1,39 @@
-# TermSender - Professional Terminal Email Sender
+# TermSender Pro - Web-Based Email Campaign Manager
 
 ## Overview
-TermSender is a Python-based terminal email sender tool designed for ethical bulk email campaigns. It features an interactive CLI interface with colorful panels and progress tracking, built using the Rich library for beautiful terminal UI and Typer for command-line interface management.
+TermSender Pro is a sophisticated web-based email campaign management tool designed for ethical bulk email campaigns. It features a modern dark-themed interface that makes email campaign creation effortless while maintaining powerful functionality. Built with Flask backend and a responsive frontend with real-time interactions.
 
 ## Recent Changes
-- **2025-09-26**: Initial implementation of TermSender MVP
-  - Created main application with interactive CLI using Rich and Typer
-  - Implemented SMTP configuration with connection testing
-  - Added email content composition with plain text and HTML support
-  - Built recipient management with CSV import and manual entry
-  - Integrated email validation and deduplication
-  - Added progress tracking and real-time sending feedback
-  - Implemented dry-run mode for testing without sending
-  - Created compliance warnings and ethical usage prompts
+- **2025-09-26**: Complete transformation to web-based application
+  - Built Flask web application with modern dark-themed UI
+  - Created responsive dashboard with navigation sidebar
+  - Implemented drag-drop CSV upload and file attachments
+  - Added rich text email editor with HTML/plain text modes
+  - Built real-time SMTP connection testing
+  - Created email validation and recipient management
+  - Added campaign launching with progress tracking
+  - Implemented compliance modal and notifications system
+  - Built file upload system for attachments (PDF, images, documents)
 
 ## User Preferences
-- Interactive terminal interface preferred over command-line arguments
+- Modern web-based interface that's effortless to use yet powerful
+- Sophisticated dark-themed UI similar to professional tools
 - Emphasis on ethical email sending practices and compliance
-- Clean, professional UI with color-coded panels and progress bars
+- Drag-and-drop functionality for easy file and CSV uploads
+- Real-time feedback and validation
 - Security-conscious approach (passwords not saved to disk)
 
 ## Project Architecture
 
 ### Core Components
-1. **SMTPConfig Class**: Manages SMTP server configuration and connection testing
-2. **EmailContent Class**: Handles email composition with preview functionality
-3. **RecipientManager Class**: Manages recipient loading from CSV or manual entry
-4. **EmailValidator Class**: Validates and cleans email addresses
-5. **EmailSender Class**: Handles the actual email sending with progress tracking
+1. **Flask Web Application**: Modern web server with RESTful API endpoints
+2. **Dark-Themed UI**: Professional interface with responsive design
+3. **Dashboard System**: Real-time status updates and navigation
+4. **SMTP Management**: Interactive configuration with live testing
+5. **Recipient System**: Drag-drop CSV upload and manual entry with validation
+6. **Rich Text Editor**: HTML/plain text composition with live preview
+7. **File Upload System**: Attachment management for PDFs, images, and documents
+8. **Campaign Manager**: Email sending with progress tracking and results
 
 ### Key Features
 - **Interactive SMTP Setup**: Step-by-step configuration with connection testing
@@ -40,10 +46,18 @@ TermSender is a Python-based terminal email sender tool designed for ethical bul
 
 ### File Structure
 ```
-├── termsender.py           # Main application file
-├── sample_recipients.csv   # Sample CSV file for testing
-├── replit.md              # Project documentation
-└── logs/                  # Log directory (created when needed)
+├── app.py                     # Flask web application
+├── termsender.py             # Original CLI version (legacy)
+├── templates/
+│   └── index.html            # Main web interface
+├── static/
+│   ├── css/
+│   │   └── style.css         # Dark-themed styling
+│   └── js/
+│       └── app.js            # Frontend JavaScript
+├── uploads/                  # File upload directory
+├── sample_recipients.csv     # Sample CSV file for testing
+└── replit.md                # Project documentation
 ```
 
 ### Dependencies
@@ -55,15 +69,20 @@ TermSender is a Python-based terminal email sender tool designed for ethical bul
 
 ### Usage
 ```bash
-# Start the interactive email sender
-python termsender.py send
+# Start the web application
+python app.py
 
-# Show version information
-python termsender.py version
-
-# Show help
-python termsender.py --help
+# Access the web interface at:
+# http://localhost:5000
 ```
+
+### Web Interface Features
+- **Dashboard**: Overview of campaign status with interactive cards
+- **SMTP Config**: Easy server setup with live connection testing
+- **Recipients**: Drag-drop CSV upload and manual email entry
+- **Compose**: Rich text editor with HTML/plain text modes and live preview
+- **Attachments**: File upload system supporting PDFs, images, and documents
+- **Launch**: Campaign summary and sending with progress tracking
 
 ### CSV Format
 The application expects CSV files with an 'email' column:
