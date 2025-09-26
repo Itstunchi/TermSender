@@ -20,7 +20,13 @@ class TermSenderApp {
     init() {
         console.log('Initializing TermSender Pro...');
         this.setupEventListeners();
-        this.showComplianceModal();
+        
+        // Only show compliance modal if not already accepted
+        const complianceAccepted = sessionStorage.getItem('complianceAccepted');
+        if (!complianceAccepted) {
+            this.showComplianceModal();
+        }
+        
         this.updateDashboard();
         console.log('TermSender Pro initialized successfully');
     }
@@ -1002,9 +1008,13 @@ class TermSenderApp {
 
     // Compliance Modal
     showComplianceModal() {
+        // Hide loading overlay if it's showing
+        this.hideLoading();
+        
         const modal = document.getElementById('complianceModal');
         if (modal) {
             modal.style.display = 'flex';
+            modal.style.zIndex = '1003'; // Ensure it's above everything
         }
     }
 
@@ -1015,10 +1025,22 @@ class TermSenderApp {
         }
         this.showNotification('Welcome to TermSender Pro!', 'success');
         this.addActivity('Compliance agreement accepted');
+        
+        // Mark as accepted in session
+        sessionStorage.setItem('complianceAccepted', 'true');
     }
 
     declineCompliance() {
-        alert('You must agree to the compliance terms to use TermSender Pro.');
+        const modal = document.getElementById('complianceModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        this.showNotification('You must agree to compliance terms to use TermSender Pro', 'error');
+        
+        // Redirect or close application
+        setTimeout(() => {
+            window.location.reload();
+        }, 2000);
     }
 
     // UI Helpers
