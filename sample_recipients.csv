@@ -1,0 +1,6 @@
+email,name,company
+test1@example.com,John Doe,Acme Corp
+test2@example.com,Jane Smith,TechCorp
+test3@example.com,Bob Johnson,StartupXYZ
+invalid-email,Invalid User,BadCorp
+test4@example.com,Alice Brown,WebAgency

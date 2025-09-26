@@ -5,3 +5,26 @@ expertMode = true
 [nix]
 channel = "stable-25_05"
 packages = ["glibcLocales"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "TermSender"
+
+[[workflows.workflow]]
+name = "TermSender"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python termsender.py send"
