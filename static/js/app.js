@@ -7,12 +7,21 @@
 class TermSenderApp {
     constructor() {
         this.currentSection = 'dashboard';
-        this.smtpConfig = null;
+        this.smtpServers = [];  // Changed from single config to array
+        this.rotationSettings = {
+            mode: 'email_count',
+            emailsPerRotation: 10,
+            secondsPerRotation: 30,
+            delayBetweenEmails: 1,
+            enableFailover: true,
+            maxRetries: 3
+        };
         this.emailContent = null;
         this.recipients = [];
         this.attachments = [];
         this.isReady = false;
         this.isLoading = false;
+        this.editingSmtpIndex = -1;  // For editing existing SMTP servers
         
         this.init();
     }
@@ -82,19 +91,61 @@ class TermSenderApp {
     }
 
     setupSMTPEventListeners() {
+        // Add SMTP Server buttons
+        const addSmtpBtn = document.getElementById('addSmtpBtn');
+        const addFirstSmtpBtn = document.getElementById('addFirstSmtpBtn');
+        
+        if (addSmtpBtn) {
+            addSmtpBtn.addEventListener('click', () => this.showSMTPModal());
+        }
+        if (addFirstSmtpBtn) {
+            addFirstSmtpBtn.addEventListener('click', () => this.showSMTPModal());
+        }
+
+        // SMTP Modal
         const smtpForm = document.getElementById('smtpForm');
         const testBtn = document.getElementById('testSmtpBtn');
+        const closeModalBtn = document.getElementById('closeSmtpModal');
 
         if (smtpForm) {
             smtpForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                this.saveSMTPConfig();
+                this.saveSMTPServer();
             });
         }
 
         if (testBtn) {
             testBtn.addEventListener('click', () => {
                 this.testSMTPConnection();
+            });
+        }
+
+        if (closeModalBtn) {
+            closeModalBtn.addEventListener('click', () => {
+                this.hideSMTPModal();
+            });
+        }
+
+        // Rotation Settings
+        const rotationMode = document.getElementById('rotationMode');
+        const saveRotationBtn = document.getElementById('saveRotationBtn');
+        const testAllSmtpBtn = document.getElementById('testAllSmtpBtn');
+
+        if (rotationMode) {
+            rotationMode.addEventListener('change', (e) => {
+                this.toggleRotationSettings(e.target.value);
+            });
+        }
+
+        if (saveRotationBtn) {
+            saveRotationBtn.addEventListener('click', () => {
+                this.saveRotationSettings();
+            });
+        }
+
+        if (testAllSmtpBtn) {
+            testAllSmtpBtn.addEventListener('click', () => {
+                this.testAllSMTPServers();
             });
         }
 
@@ -303,6 +354,47 @@ class TermSenderApp {
     }
 
     // SMTP Configuration
+    showSMTPModal(index = -1) {
+        const modal = document.getElementById('smtpModal');
+        const title = document.getElementById('smtpModalTitle');
+        
+        this.editingSmtpIndex = index;
+        
+        if (index >= 0 && this.smtpServers[index]) {
+            // Edit existing server
+            title.textContent = 'Edit SMTP Server';
+            const server = this.smtpServers[index];
+            
+            document.getElementById('smtpName').value = server.name || '';
+            document.getElementById('smtpHost').value = server.host || '';
+            document.getElementById('smtpPort').value = server.port || 587;
+            document.getElementById('smtpUsername').value = server.username || '';
+            document.getElementById('smtpPassword').value = server.password || '';
+            document.getElementById('senderEmail').value = server.sender_email || '';
+            document.getElementById('maxEmailsPerHour').value = server.max_emails_per_hour || 300;
+            document.getElementById('smtpPriority').value = server.priority || 1;
+            document.getElementById('useTls').checked = server.use_tls !== false;
+            document.getElementById('smtpEnabled').checked = server.enabled !== false;
+        } else {
+            // Add new server
+            title.textContent = 'Add SMTP Server';
+            document.getElementById('smtpForm').reset();
+            document.getElementById('smtpPort').value = 587;
+            document.getElementById('maxEmailsPerHour').value = 300;
+            document.getElementById('smtpPriority').value = this.smtpServers.length + 1;
+            document.getElementById('useTls').checked = true;
+            document.getElementById('smtpEnabled').checked = true;
+        }
+        
+        modal.style.display = 'flex';
+    }
+
+    hideSMTPModal() {
+        const modal = document.getElementById('smtpModal');
+        modal.style.display = 'none';
+        this.editingSmtpIndex = -1;
+    }
+
     async testSMTPConnection() {
         const formData = this.getSMTPFormData();
         if (!formData) return;
@@ -335,9 +427,11 @@ class TermSenderApp {
         }
     }
 
-    async saveSMTPConfig() {
-        const formData = this.getSMTPFormData();
-        if (!formData) return;
+    async testAllSMTPServers() {
+        if (this.smtpServers.length === 0) {
+            this.showNotification('No SMTP servers to test', 'warning');
+            return;
+        }
 
         this.showLoading();
         
@@ -345,41 +439,198 @@ class TermSenderApp {
             const response = await fetch('/api/test-smtp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(this.smtpServers)
             });
 
             const result = await response.json();
             
-            if (result.success) {
-                this.smtpConfig = formData;
-                this.showNotification('SMTP configuration saved successfully!', 'success');
-                this.updateDashboard();
-                this.addActivity('SMTP configuration saved and tested');
+            if (result.success && result.results) {
+                let successCount = 0;
+                let failCount = 0;
+                
+                result.results.forEach(res => {
+                    if (res.status === 'success') successCount++;
+                    else failCount++;
+                });
+                
+                this.showNotification(`Test Results: ${successCount} successful, ${failCount} failed`, 
+                    failCount === 0 ? 'success' : 'warning');
+                this.addActivity(`Tested ${this.smtpServers.length} SMTP servers`);
+                
+                // Update server status in UI
+                this.updateSMTPServersList();
             } else {
-                this.showNotification(result.message, 'error');
+                this.showNotification(result.message || 'Test failed', 'error');
             }
         } catch (error) {
-            console.error('SMTP save error:', error);
-            this.showNotification('Failed to save SMTP configuration', 'error');
+            console.error('SMTP test error:', error);
+            this.showNotification('Failed to test SMTP servers', 'error');
         } finally {
             this.hideLoading();
         }
     }
 
+    saveSMTPServer() {
+        const formData = this.getSMTPFormData();
+        if (!formData) return;
+
+        if (this.editingSmtpIndex >= 0) {
+            // Update existing server
+            this.smtpServers[this.editingSmtpIndex] = formData;
+            this.showNotification('SMTP server updated successfully!', 'success');
+            this.addActivity(`Updated SMTP server: ${formData.name}`);
+        } else {
+            // Add new server
+            this.smtpServers.push(formData);
+            this.showNotification('SMTP server added successfully!', 'success');
+            this.addActivity(`Added SMTP server: ${formData.name}`);
+        }
+
+        this.updateSMTPServersList();
+        this.updateDashboard();
+        this.hideSMTPModal();
+    }
+
+    removeSMTPServer(index) {
+        if (confirm('Are you sure you want to remove this SMTP server?')) {
+            const server = this.smtpServers[index];
+            this.smtpServers.splice(index, 1);
+            this.updateSMTPServersList();
+            this.updateDashboard();
+            this.showNotification(`SMTP server "${server.name}" removed`, 'success');
+            this.addActivity(`Removed SMTP server: ${server.name}`);
+        }
+    }
+
+    toggleSMTPServer(index) {
+        const server = this.smtpServers[index];
+        server.enabled = !server.enabled;
+        this.updateSMTPServersList();
+        this.updateDashboard();
+        this.showNotification(`SMTP server "${server.name}" ${server.enabled ? 'enabled' : 'disabled'}`, 'success');
+    }
+
+    toggleRotationSettings(mode) {
+        const emailCountSetting = document.getElementById('emailCountSetting');
+        const timeDurationSetting = document.getElementById('timeDurationSetting');
+        
+        if (mode === 'email_count') {
+            emailCountSetting.style.display = 'block';
+            timeDurationSetting.style.display = 'none';
+        } else {
+            emailCountSetting.style.display = 'none';
+            timeDurationSetting.style.display = 'block';
+        }
+    }
+
+    saveRotationSettings() {
+        const mode = document.getElementById('rotationMode').value;
+        const emailsPerRotation = parseInt(document.getElementById('emailsPerRotation').value);
+        const secondsPerRotation = parseInt(document.getElementById('secondsPerRotation').value);
+        const delayBetweenEmails = parseFloat(document.getElementById('delayBetweenEmails').value);
+        const enableFailover = document.getElementById('enableFailover').checked;
+        const maxRetries = parseInt(document.getElementById('maxRetries').value);
+
+        this.rotationSettings = {
+            mode,
+            emailsPerRotation,
+            secondsPerRotation,
+            delayBetweenEmails,
+            enableFailover,
+            maxRetries
+        };
+
+        this.showNotification('Rotation settings saved successfully!', 'success');
+        this.addActivity('Updated SMTP rotation settings');
+        this.updateDashboard();
+    }
+
+    updateSMTPServersList() {
+        const container = document.getElementById('smtpServersList');
+        if (!container) return;
+
+        if (this.smtpServers.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-server"></i>
+                    <p>No SMTP servers configured</p>
+                    <button class="btn btn-outline" id="addFirstSmtpBtn">Add Your First SMTP Server</button>
+                </div>
+            `;
+            
+            // Re-attach event listener
+            const addFirstBtn = document.getElementById('addFirstSmtpBtn');
+            if (addFirstBtn) {
+                addFirstBtn.addEventListener('click', () => this.showSMTPModal());
+            }
+            return;
+        }
+
+        container.innerHTML = this.smtpServers.map((server, index) => `
+            <div class="smtp-server-card ${!server.enabled ? 'disabled' : ''}">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h4>${server.name}</h4>
+                        <span class="server-details">${server.host}:${server.port}</span>
+                    </div>
+                    <div class="server-actions">
+                        <button class="btn btn-sm btn-outline" onclick="app.showSMTPModal(${index})" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm ${server.enabled ? 'btn-warning' : 'btn-success'}" 
+                                onclick="app.toggleSMTPServer(${index})" title="${server.enabled ? 'Disable' : 'Enable'}">
+                            <i class="fas fa-${server.enabled ? 'pause' : 'play'}"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="app.removeSMTPServer(${index})" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="server-stats">
+                    <div class="stat">
+                        <span class="stat-label">Priority</span>
+                        <span class="stat-value">${server.priority || 1}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Max/Hour</span>
+                        <span class="stat-value">${server.max_emails_per_hour || 300}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value ${server.enabled ? 'status-enabled' : 'status-disabled'}">
+                            ${server.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
     getSMTPFormData() {
+        const name = document.getElementById('smtpName')?.value?.trim();
         const host = document.getElementById('smtpHost')?.value?.trim();
         const port = parseInt(document.getElementById('smtpPort')?.value);
         const username = document.getElementById('smtpUsername')?.value?.trim();
         const password = document.getElementById('smtpPassword')?.value;
         const senderEmail = document.getElementById('senderEmail')?.value?.trim();
+        const maxEmailsPerHour = parseInt(document.getElementById('maxEmailsPerHour')?.value);
+        const priority = parseInt(document.getElementById('smtpPriority')?.value);
         const useTls = document.getElementById('useTls')?.checked;
+        const enabled = document.getElementById('smtpEnabled')?.checked;
 
-        if (!host || !port || !username || !password || !senderEmail) {
-            this.showNotification('Please fill in all SMTP fields', 'error');
+        if (!name || !host || !port || !username || !password || !senderEmail) {
+            this.showNotification('Please fill in all required SMTP fields', 'error');
             return null;
         }
 
-        return { host, port, username, password, sender_email: senderEmail, use_tls: useTls };
+        return { 
+            name, host, port, username, password, 
+            sender_email: senderEmail, 
+            max_emails_per_hour: maxEmailsPerHour || 300,
+            priority: priority || 1,
+            use_tls: useTls, 
+            enabled: enabled 
+        };
     }
 
     // Recipients Management
@@ -785,36 +1036,169 @@ class TermSenderApp {
 
     // Send Campaign
     updateSendSummary() {
-        const summarySubject = document.getElementById('summarySubject');
-        const summaryRecipients = document.getElementById('summaryRecipients');
-        const summaryAttachments = document.getElementById('summaryAttachments');
-        const summarySmtp = document.getElementById('summarySmtp');
-        
-        if (summarySubject) summarySubject.textContent = this.emailContent?.subject || '-';
-        if (summaryRecipients) summaryRecipients.textContent = this.recipients.length.toString();
-        if (summaryAttachments) summaryAttachments.textContent = this.attachments.length.toString();
-        if (summarySmtp) summarySmtp.textContent = this.smtpConfig?.host || '-';
+        this.updateAdvancedPreview();
+        this.updateLaunchButton();
+    }
 
-        // Check if ready to send
-        const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
+    updateAdvancedPreview() {
+        // Email Content Preview
+        const previewFrom = document.getElementById('previewFrom');
+        const previewSubjectLine = document.getElementById('previewSubjectLine');
+        const previewEmailBody = document.getElementById('previewEmailBody');
+        
+        if (previewFrom) {
+            const enabledServers = this.smtpServers.filter(s => s.enabled);
+            previewFrom.textContent = enabledServers.length > 0 ? enabledServers[0].sender_email : 'No sender configured';
+        }
+        
+        if (previewSubjectLine) {
+            previewSubjectLine.textContent = this.emailContent?.subject || 'No subject';
+        }
+        
+        if (previewEmailBody) {
+            if (this.emailContent?.body) {
+                if (this.emailContent.is_html) {
+                    previewEmailBody.innerHTML = this.emailContent.body;
+                } else {
+                    previewEmailBody.innerHTML = `<pre style="white-space: pre-wrap;">${this.emailContent.body}</pre>`;
+                }
+            } else {
+                previewEmailBody.innerHTML = '<p class="empty-preview">No content to preview</p>';
+            }
+        }
+
+        // Recipients Summary
+        const totalRecipientsCount = document.getElementById('totalRecipientsCount');
+        const domainBreakdown = document.getElementById('domainBreakdown');
+        
+        if (totalRecipientsCount) {
+            totalRecipientsCount.textContent = this.recipients.length.toString();
+        }
+        
+        if (domainBreakdown) {
+            if (this.recipients.length > 0) {
+                const domains = {};
+                this.recipients.forEach(r => {
+                    const domain = r.email.split('@')[1] || 'unknown';
+                    domains[domain] = (domains[domain] || 0) + 1;
+                });
+                
+                const sortedDomains = Object.entries(domains)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+                    
+                domainBreakdown.innerHTML = sortedDomains.map(([domain, count]) => 
+                    `<div class="domain-item">
+                        <span class="domain-name">${domain}</span>
+                        <span class="domain-count">${count}</span>
+                    </div>`
+                ).join('');
+            } else {
+                domainBreakdown.innerHTML = '<div class="empty-breakdown">No recipients loaded</div>';
+            }
+        }
+
+        // SMTP Summary
+        const smtpSummary = document.getElementById('smtpSummary');
+        if (smtpSummary) {
+            const enabledServers = this.smtpServers.filter(s => s.enabled);
+            if (enabledServers.length > 0) {
+                smtpSummary.innerHTML = `
+                    <div class="smtp-overview">
+                        <div class="smtp-stat">
+                            <span class="stat-number">${enabledServers.length}</span>
+                            <span class="stat-label">Active Servers</span>
+                        </div>
+                        <div class="smtp-rotation-info">
+                            <span class="rotation-mode">${this.rotationSettings.mode.replace('_', ' ')}</span>
+                            <span class="rotation-value">
+                                ${this.rotationSettings.mode === 'email_count' ? 
+                                    `${this.rotationSettings.emailsPerRotation} emails` : 
+                                    `${this.rotationSettings.secondsPerRotation} seconds`}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="smtp-servers-preview">
+                        ${enabledServers.slice(0, 3).map(server => 
+                            `<div class="smtp-server-preview">
+                                <span class="server-name">${server.name}</span>
+                                <span class="server-priority">Priority ${server.priority}</span>
+                            </div>`
+                        ).join('')}
+                        ${enabledServers.length > 3 ? `<div class="more-servers">+${enabledServers.length - 3} more</div>` : ''}
+                    </div>
+                `;
+            } else {
+                smtpSummary.innerHTML = '<div class="empty-smtp">No SMTP servers configured</div>';
+            }
+        }
+
+        // Attachments Summary
+        const attachmentsCount = document.getElementById('attachmentsCount');
+        const attachmentsList = document.getElementById('attachmentsList');
+        
+        if (attachmentsCount) {
+            attachmentsCount.textContent = this.attachments.length.toString();
+        }
+        
+        if (attachmentsList) {
+            if (this.attachments.length > 0) {
+                attachmentsList.innerHTML = this.attachments.map(att => 
+                    `<div class="attachment-preview">
+                        <span class="attachment-name">${att.original_name}</span>
+                        <span class="attachment-size">${this.formatFileSize(att.size)}</span>
+                    </div>`
+                ).join('');
+            } else {
+                attachmentsList.innerHTML = '<div class="empty-attachments">No attachments</div>';
+            }
+        }
+    }
+
+    updateLaunchButton() {
+        const enabledServers = this.smtpServers.filter(s => s.enabled);
+        const isReady = enabledServers.length > 0 && this.emailContent && this.recipients.length > 0;
         const launchBtn = document.getElementById('launchBtn');
+        const launchWarning = document.getElementById('launchWarning');
         
         if (launchBtn) {
             if (isReady) {
                 launchBtn.disabled = false;
+                launchBtn.classList.remove('btn-secondary');
+                launchBtn.classList.add('btn-danger');
                 const span = launchBtn.querySelector('span');
                 if (span) span.textContent = 'Launch Campaign';
+                
+                if (launchWarning) launchWarning.style.display = 'none';
             } else {
                 launchBtn.disabled = true;
+                launchBtn.classList.remove('btn-danger');
+                launchBtn.classList.add('btn-secondary');
                 const span = launchBtn.querySelector('span');
                 if (span) span.textContent = 'Complete Setup First';
+                
+                if (launchWarning) {
+                    launchWarning.style.display = 'flex';
+                    const missing = [];
+                    if (enabledServers.length === 0) missing.push('SMTP servers');
+                    if (!this.emailContent) missing.push('email content');
+                    if (this.recipients.length === 0) missing.push('recipients');
+                    
+                    const warningSpan = launchWarning.querySelector('span');
+                    if (warningSpan) {
+                        warningSpan.textContent = `Missing: ${missing.join(', ')}`;
+                    }
+                }
             }
         }
     }
 
     async launchCampaign() {
-        if (!this.smtpConfig || !this.emailContent || this.recipients.length === 0) {
+        // Validate setup
+        const enabledServers = this.smtpServers.filter(s => s.enabled);
+        if (enabledServers.length === 0 || !this.emailContent || this.recipients.length === 0) {
             this.showNotification('Please complete all setup steps first', 'error');
+            this.updateLaunchButton();
             return;
         }
 
@@ -822,7 +1206,7 @@ class TermSenderApp {
         const sendMode = sendModeElement ? sendModeElement.value : 'dry_run';
         const isDryRun = sendMode === 'dry_run';
 
-        if (!isDryRun && !confirm(`Are you sure you want to send ${this.recipients.length} emails? This action cannot be undone.`)) {
+        if (!isDryRun && !confirm(`⚠️ Are you sure you want to send ${this.recipients.length} emails using ${enabledServers.length} SMTP server(s)? This action cannot be undone.`)) {
             return;
         }
 
@@ -836,15 +1220,29 @@ class TermSenderApp {
         // Reset progress
         this.resetProgress();
 
+        // Get advanced options
+        const batchSize = parseInt(document.getElementById('batchSize')?.value) || 50;
+        const maxRetries = parseInt(document.getElementById('maxRetries')?.value) || 3;
+        const enableAnalytics = document.getElementById('enableAnalytics')?.checked !== false;
+
         const payload = {
-            smtp_config: this.smtpConfig,
+            smtp_configs: enabledServers,  // Fixed: use array instead of single config
             content: this.emailContent,
             recipients: this.recipients,
             attachments: this.attachments,
-            dry_run: isDryRun
+            dry_run: isDryRun,
+            rotation_mode: this.rotationSettings.mode,
+            rotation_value: this.rotationSettings.mode === 'email_count' ? 
+                this.rotationSettings.emailsPerRotation : this.rotationSettings.secondsPerRotation,
+            delay_between_emails: this.rotationSettings.delayBetweenEmails,
+            batch_size: batchSize,
+            max_retries: maxRetries,
+            enable_analytics: enableAnalytics
         };
 
         try {
+            this.startProgressTimer();
+            
             const response = await fetch('/api/send-emails', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -857,11 +1255,13 @@ class TermSenderApp {
                 this.displayCampaignResults(result.results);
                 this.addActivity(`Campaign ${isDryRun ? 'simulated' : 'sent'}: ${result.results.sent} emails`);
             } else {
-                this.showNotification(result.message, 'error');
+                this.showNotification(result.message || 'Campaign failed', 'error');
             }
         } catch (error) {
             console.error('Campaign launch error:', error);
             this.showNotification('Failed to launch campaign', 'error');
+        } finally {
+            this.stopProgressTimer();
         }
     }
 
@@ -960,13 +1360,193 @@ class TermSenderApp {
         return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
     }
 
+    startProgressTimer() {
+        this.progressStartTime = Date.now();
+        this.progressTimer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.progressStartTime) / 1000);
+            const elapsedTimeEl = document.getElementById('elapsedTime');
+            if (elapsedTimeEl) {
+                elapsedTimeEl.textContent = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+            }
+        }, 1000);
+    }
+
+    stopProgressTimer() {
+        if (this.progressTimer) {
+            clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+    }
+
+    resetProgress() {
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const sentCount = document.getElementById('sentCount');
+        const failedCount = document.getElementById('failedCount');
+        const elapsedTime = document.getElementById('elapsedTime');
+        const rotationCount = document.getElementById('rotationCount');
+        const progressDetails = document.getElementById('progressDetails');
+        const liveLog = document.getElementById('liveLog');
+        const currentSmtpName = document.getElementById('currentSmtpName');
+        const currentSmtpUsage = document.getElementById('currentSmtpUsage');
+        
+        if (progressFill) progressFill.style.width = '0%';
+        if (progressText) progressText.textContent = '0%';
+        if (sentCount) sentCount.textContent = '0';
+        if (failedCount) failedCount.textContent = '0';
+        if (elapsedTime) elapsedTime.textContent = '0s';
+        if (rotationCount) rotationCount.textContent = '0';
+        if (progressDetails) progressDetails.textContent = 'Initializing...';
+        if (currentSmtpName) currentSmtpName.textContent = '-';
+        if (currentSmtpUsage) currentSmtpUsage.textContent = '0 emails sent';
+        
+        if (liveLog) {
+            liveLog.innerHTML = `
+                <div class="log-entry initial">
+                    <span class="log-time">${new Date().toLocaleTimeString()}</span>
+                    <span class="log-message">Campaign initialized and ready to start...</span>
+                </div>
+            `;
+        }
+    }
+
+    displayCampaignResults(results) {
+        this.stopProgressTimer();
+        
+        // Update final progress
+        const progressPercent = results.total > 0 ? (results.sent / results.total) * 100 : 0;
+        
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const sentCount = document.getElementById('sentCount');
+        const failedCount = document.getElementById('failedCount');
+        const progressDetails = document.getElementById('progressDetails');
+        
+        if (progressFill) progressFill.style.width = progressPercent + '%';
+        if (progressText) progressText.textContent = Math.round(progressPercent) + '%';
+        if (sentCount) sentCount.textContent = results.sent.toString();
+        if (failedCount) failedCount.textContent = results.failed.toString();
+        if (progressDetails) progressDetails.textContent = 'Campaign completed!';
+
+        // Show detailed results after a delay
+        setTimeout(() => {
+            this.showDetailedResults(results);
+        }, 1500);
+    }
+
+    showDetailedResults(results) {
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            resultsSection.style.display = 'block';
+            
+            // Update summary cards
+            const finalSentCount = document.getElementById('finalSentCount');
+            const finalFailedCount = document.getElementById('finalFailedCount');
+            const successPercentage = document.getElementById('successPercentage');
+            const failurePercentage = document.getElementById('failurePercentage');
+            const campaignDuration = document.getElementById('campaignDuration');
+            const emailsPerMinute = document.getElementById('emailsPerMinute');
+            const smtpServersUsed = document.getElementById('smtpServersUsed');
+            const totalRotations = document.getElementById('totalRotations');
+            
+            if (finalSentCount) finalSentCount.textContent = results.sent.toString();
+            if (finalFailedCount) finalFailedCount.textContent = results.failed.toString();
+            
+            const successRate = results.total > 0 ? (results.sent / results.total) * 100 : 0;
+            const failureRate = 100 - successRate;
+            
+            if (successPercentage) successPercentage.textContent = successRate.toFixed(1) + '%';
+            if (failurePercentage) failurePercentage.textContent = failureRate.toFixed(1) + '%';
+            
+            const duration = this.calculateDuration(results.start_time, results.end_time);
+            if (campaignDuration) campaignDuration.textContent = duration;
+            
+            if (emailsPerMinute && results.start_time && results.end_time) {
+                const durationMs = new Date(results.end_time) - new Date(results.start_time);
+                const rate = durationMs > 0 ? Math.round((results.sent / durationMs) * 60000) : 0;
+                emailsPerMinute.textContent = rate.toString();
+            }
+            
+            if (smtpServersUsed) {
+                const serversUsed = Object.keys(results.smtp_usage || {}).length;
+                smtpServersUsed.textContent = serversUsed.toString();
+            }
+            
+            if (totalRotations) {
+                totalRotations.textContent = `${results.smtp_rotations || 0} rotations`;
+            }
+            
+            // Update SMTP usage breakdown
+            this.updateSmtpUsageBreakdown(results.smtp_usage || {});
+            
+            // Update failed recipients table
+            this.updateFailedRecipientsTable(results.failed_recipients || []);
+        }
+    }
+
+    updateSmtpUsageBreakdown(smtpUsage) {
+        const smtpUsageGrid = document.getElementById('smtpUsageGrid');
+        if (!smtpUsageGrid) return;
+        
+        if (Object.keys(smtpUsage).length === 0) {
+            smtpUsageGrid.innerHTML = '<div class="empty-usage">No SMTP usage data</div>';
+            return;
+        }
+        
+        const total = Object.values(smtpUsage).reduce((a, b) => a + b, 0);
+        
+        smtpUsageGrid.innerHTML = Object.entries(smtpUsage)
+            .sort(([,a], [,b]) => b - a)
+            .map(([serverName, count]) => {
+                const percentage = total > 0 ? (count / total) * 100 : 0;
+                return `
+                    <div class="smtp-usage-card">
+                        <div class="usage-header">
+                            <span class="server-name">${serverName}</span>
+                            <span class="usage-count">${count} emails</span>
+                        </div>
+                        <div class="usage-bar">
+                            <div class="usage-fill" style="width: ${percentage}%"></div>
+                        </div>
+                        <div class="usage-percentage">${percentage.toFixed(1)}%</div>
+                    </div>
+                `;
+            }).join('');
+    }
+
+    updateFailedRecipientsTable(failedRecipients) {
+        const failedRecipientsSection = document.getElementById('failedRecipientsSection');
+        const failedRecipientsTable = document.getElementById('failedRecipientsTable');
+        
+        if (!failedRecipientsSection || !failedRecipientsTable) return;
+        
+        if (failedRecipients.length === 0) {
+            failedRecipientsSection.style.display = 'none';
+            return;
+        }
+        
+        failedRecipientsSection.style.display = 'block';
+        
+        failedRecipientsTable.innerHTML = failedRecipients.map(failed => `
+            <tr>
+                <td>${failed.email}</td>
+                <td class="error-reason">${failed.error}</td>
+                <td>${failed.smtp_server || 'Unknown'}</td>
+                <td>${failed.timestamp ? new Date(failed.timestamp).toLocaleString() : '-'}</td>
+            </tr>
+        `).join('');
+    }
+
     // Dashboard Updates
     updateDashboard() {
         // Update SMTP status
         const smtpStatus = document.getElementById('smtpStatus');
         if (smtpStatus) {
-            if (this.smtpConfig) {
-                smtpStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Configured</span>';
+            const enabledServers = this.smtpServers.filter(s => s.enabled);
+            if (enabledServers.length > 0) {
+                smtpStatus.innerHTML = `<i class="fas fa-circle status-success"></i><span>${enabledServers.length} Server(s) Ready</span>`;
+            } else if (this.smtpServers.length > 0) {
+                smtpStatus.innerHTML = '<i class="fas fa-circle status-warning"></i><span>Servers Disabled</span>';
             } else {
                 smtpStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Configured</span>';
             }
@@ -995,7 +1575,8 @@ class TermSenderApp {
         // Update launch status
         const launchStatus = document.getElementById('launchStatus');
         if (launchStatus) {
-            const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
+            const enabledServers = this.smtpServers.filter(s => s.enabled);
+            const isReady = enabledServers.length > 0 && this.emailContent && this.recipients.length > 0;
             if (isReady) {
                 launchStatus.innerHTML = '<i class="fas fa-circle status-success"></i><span>Ready to Launch</span>';
             } else {
@@ -1009,8 +1590,14 @@ class TermSenderApp {
         
         if (totalRecipients) totalRecipients.textContent = this.recipients.length.toString();
         if (readyToSend) {
-            const isReady = this.smtpConfig && this.emailContent && this.recipients.length > 0;
+            const enabledServers = this.smtpServers.filter(s => s.enabled);
+            const isReady = enabledServers.length > 0 && this.emailContent && this.recipients.length > 0;
             readyToSend.textContent = isReady ? 'Yes' : 'No';
+        }
+
+        // Update send section if currently viewing it
+        if (this.currentSection === 'send') {
+            this.updateSendSummary();
         }
     }
 

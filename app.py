@@ -298,7 +298,7 @@ def send_emails():
             return jsonify({"success": False, "message": "No data provided"})
 
         # Validate required data
-        smtp_configs = data.get('smtp_configs', [])  # Now supports multiple SMTP servers
+        smtp_configs = data.get('smtp_configs', [])
         content = data.get('content')
         recipients = data.get('recipients', [])
         attachments = data.get('attachments', [])
@@ -307,12 +307,27 @@ def send_emails():
         # Rotation settings
         rotation_mode = data.get('rotation_mode', 'email_count')
         rotation_value = data.get('rotation_value', 10)
+        delay_between_emails = data.get('delay_between_emails', 1)
+        batch_size = data.get('batch_size', 50)
+        max_retries = data.get('max_retries', 3)
 
-        if not smtp_configs or not content or not recipients:
-            return jsonify({"success": False, "message": "Missing required data"})
+        # Detailed validation
+        if not smtp_configs:
+            return jsonify({"success": False, "message": "No SMTP servers configured"})
+        
+        if not content or not content.get('subject') or not content.get('body'):
+            return jsonify({"success": False, "message": "Email content is incomplete"})
+        
+        if not recipients:
+            return jsonify({"success": False, "message": "No recipients provided"})
+
+        # Filter enabled SMTP servers
+        enabled_configs = [config for config in smtp_configs if config.get('enabled', True)]
+        if not enabled_configs:
+            return jsonify({"success": False, "message": "No enabled SMTP servers found"})
 
         # Create sender with rotation
-        sender = WebEmailSender(smtp_configs, rotation_mode, rotation_value)
+        sender = WebEmailSender(enabled_configs, rotation_mode, rotation_value)
 
         # Prepare attachment paths
         attachment_paths = []
@@ -331,11 +346,15 @@ def send_emails():
 
         return jsonify({
             "success": True,
-            "results": results
+            "results": results,
+            "message": f"Campaign completed: {results['sent']} sent, {results['failed']} failed"
         })
 
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+        import traceback
+        print(f"Send emails error: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"})
 
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():

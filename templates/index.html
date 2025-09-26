@@ -156,61 +156,177 @@
                 <!-- SMTP Configuration Section -->
                 <section id="smtp" class="content-section">
                     <div class="section-header">
-                        <h2>SMTP Configuration</h2>
-                        <p>Configure your email server settings for sending campaigns</p>
+                        <h2>SMTP Configuration & Rotation</h2>
+                        <p>Configure multiple SMTP servers with intelligent rotation for maximum deliverability</p>
                     </div>
 
-                    <div class="form-container">
-                        <form id="smtpForm">
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label for="smtpHost">SMTP Host</label>
-                                    <input type="text" id="smtpHost" placeholder="smtp.gmail.com" required>
-                                    <small>Your email provider's SMTP server</small>
+                    <div class="smtp-container">
+                        <!-- SMTP Servers List -->
+                        <div class="smtp-servers-section">
+                            <div class="smtp-servers-header">
+                                <h3>SMTP Servers</h3>
+                                <button type="button" class="btn btn-primary" id="addSmtpBtn">
+                                    <i class="fas fa-plus"></i>
+                                    Add SMTP Server
+                                </button>
+                            </div>
+                            
+                            <div class="smtp-servers-list" id="smtpServersList">
+                                <div class="empty-state">
+                                    <i class="fas fa-server"></i>
+                                    <p>No SMTP servers configured</p>
+                                    <button class="btn btn-outline" id="addFirstSmtpBtn">Add Your First SMTP Server</button>
                                 </div>
+                            </div>
+                        </div>
 
-                                <div class="form-group">
-                                    <label for="smtpPort">Port</label>
-                                    <input type="number" id="smtpPort" value="587" required>
-                                    <small>Usually 587 for TLS or 465 for SSL</small>
+                        <!-- Rotation Settings -->
+                        <div class="rotation-settings-section">
+                            <h3>Rotation Settings</h3>
+                            <div class="settings-grid">
+                                <div class="setting-group">
+                                    <label>Rotation Mode</label>
+                                    <select id="rotationMode">
+                                        <option value="email_count">By Email Count</option>
+                                        <option value="time_based">By Time Duration</option>
+                                    </select>
                                 </div>
-
-                                <div class="form-group">
-                                    <label for="smtpUsername">Username/Email</label>
-                                    <input type="email" id="smtpUsername" placeholder="your@email.com" required>
+                                
+                                <div class="setting-group" id="emailCountSetting">
+                                    <label for="emailsPerRotation">Emails per Rotation</label>
+                                    <input type="number" id="emailsPerRotation" value="10" min="1" max="100">
+                                    <small>Switch SMTP after N emails</small>
                                 </div>
-
-                                <div class="form-group">
-                                    <label for="smtpPassword">Password</label>
-                                    <input type="password" id="smtpPassword" placeholder="App password or email password" required>
-                                    <small>Use app passwords for Gmail/Outlook</small>
+                                
+                                <div class="setting-group" id="timeDurationSetting" style="display: none;">
+                                    <label for="secondsPerRotation">Seconds per Rotation</label>
+                                    <input type="number" id="secondsPerRotation" value="30" min="5" max="300">
+                                    <small>Switch SMTP after N seconds</small>
                                 </div>
-
-                                <div class="form-group">
-                                    <label for="senderEmail">Sender Email</label>
-                                    <input type="email" id="senderEmail" placeholder="sender@domain.com" required>
+                                
+                                <div class="setting-group">
+                                    <label for="delayBetweenEmails">Delay Between Emails (seconds)</label>
+                                    <input type="number" id="delayBetweenEmails" value="1" min="0.5" max="10" step="0.5">
+                                    <small>Recommended: 1-3 seconds</small>
                                 </div>
-
-                                <div class="form-group">
+                                
+                                <div class="setting-group">
                                     <label class="checkbox-label">
-                                        <input type="checkbox" id="useTls" checked>
+                                        <input type="checkbox" id="enableFailover" checked>
                                         <span class="checkmark"></span>
-                                        Use TLS Encryption
+                                        Enable Automatic Failover
                                     </label>
+                                    <small>Automatically switch to next server if one fails</small>
+                                </div>
+                                
+                                <div class="setting-group">
+                                    <label for="maxRetries">Max Retries per Server</label>
+                                    <input type="number" id="maxRetries" value="3" min="1" max="10">
+                                    <small>Retry attempts before switching server</small>
                                 </div>
                             </div>
-
+                            
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" id="testSmtpBtn">
+                                <button type="button" class="btn btn-secondary" id="testAllSmtpBtn">
                                     <i class="fas fa-vial"></i>
-                                    Test Connection
+                                    Test All Servers
                                 </button>
-                                <button type="submit" class="btn btn-primary">
+                                <button type="button" class="btn btn-primary" id="saveRotationBtn">
                                     <i class="fas fa-save"></i>
-                                    Save Configuration
+                                    Save Rotation Settings
                                 </button>
                             </div>
-                        </form>
+                        </div>
+                    </div>
+
+                    <!-- SMTP Server Modal -->
+                    <div class="modal" id="smtpModal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 id="smtpModalTitle">Add SMTP Server</h3>
+                                <button class="modal-close" id="closeSmtpModal">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="smtpForm">
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="smtpName">Server Name</label>
+                                            <input type="text" id="smtpName" placeholder="Gmail Primary" required>
+                                            <small>Friendly name for this SMTP server</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="smtpHost">SMTP Host</label>
+                                            <input type="text" id="smtpHost" placeholder="smtp.gmail.com" required>
+                                            <small>Your email provider's SMTP server</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="smtpPort">Port</label>
+                                            <input type="number" id="smtpPort" value="587" required>
+                                            <small>Usually 587 for TLS or 465 for SSL</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="smtpUsername">Username/Email</label>
+                                            <input type="email" id="smtpUsername" placeholder="your@email.com" required>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="smtpPassword">Password</label>
+                                            <input type="password" id="smtpPassword" placeholder="App password or email password" required>
+                                            <small>Use app passwords for Gmail/Outlook</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="senderEmail">Sender Email</label>
+                                            <input type="email" id="senderEmail" placeholder="sender@domain.com" required>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="maxEmailsPerHour">Max Emails per Hour</label>
+                                            <input type="number" id="maxEmailsPerHour" value="300" min="1" max="1000">
+                                            <small>Rate limit for this server</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="smtpPriority">Priority</label>
+                                            <input type="number" id="smtpPriority" value="1" min="1" max="10">
+                                            <small>Lower number = higher priority</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="useTls" checked>
+                                                <span class="checkmark"></span>
+                                                Use TLS Encryption
+                                            </label>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="smtpEnabled" checked>
+                                                <span class="checkmark"></span>
+                                                Enable This Server
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="modal-actions">
+                                        <button type="button" class="btn btn-secondary" id="testSmtpBtn">
+                                            <i class="fas fa-vial"></i>
+                                            Test Connection
+                                        </button>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save"></i>
+                                            Save SMTP Server
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -415,92 +531,291 @@
                 <section id="send" class="content-section">
                     <div class="section-header">
                         <h2>Launch Campaign</h2>
-                        <p>Review and send your email campaign</p>
+                        <p>Advanced campaign preview and execution with real-time analytics</p>
                     </div>
 
                     <div class="launch-container">
-                        <div class="campaign-summary">
-                            <h3>Campaign Summary</h3>
-                            <div class="summary-grid">
-                                <div class="summary-item">
-                                    <i class="fas fa-envelope"></i>
-                                    <div>
-                                        <span class="summary-label">Subject</span>
-                                        <span class="summary-value" id="summarySubject">-</span>
+                        <!-- Advanced Campaign Preview -->
+                        <div class="campaign-preview">
+                            <h3>📋 Campaign Preview</h3>
+                            <div class="preview-grid">
+                                <div class="preview-section">
+                                    <h4>📧 Email Content</h4>
+                                    <div class="preview-email">
+                                        <div class="email-header">
+                                            <span class="preview-label">From:</span>
+                                            <span class="preview-value" id="previewFrom">-</span>
+                                        </div>
+                                        <div class="email-header">
+                                            <span class="preview-label">Subject:</span>
+                                            <span class="preview-value" id="previewSubjectLine">-</span>
+                                        </div>
+                                        <div class="email-body-preview" id="previewEmailBody">
+                                            <p class="empty-preview">No content to preview</p>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="summary-item">
-                                    <i class="fas fa-users"></i>
-                                    <div>
-                                        <span class="summary-label">Recipients</span>
-                                        <span class="summary-value" id="summaryRecipients">0</span>
+                                
+                                <div class="preview-section">
+                                    <h4>👥 Recipients Summary</h4>
+                                    <div class="recipients-summary">
+                                        <div class="summary-stat">
+                                            <span class="stat-number" id="totalRecipientsCount">0</span>
+                                            <span class="stat-label">Total Recipients</span>
+                                        </div>
+                                        <div class="domain-breakdown" id="domainBreakdown">
+                                            <div class="empty-breakdown">No recipients loaded</div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="summary-item">
-                                    <i class="fas fa-paperclip"></i>
-                                    <div>
-                                        <span class="summary-label">Attachments</span>
-                                        <span class="summary-value" id="summaryAttachments">0</span>
+                                
+                                <div class="preview-section">
+                                    <h4>🔄 SMTP Configuration</h4>
+                                    <div class="smtp-summary" id="smtpSummary">
+                                        <div class="empty-smtp">No SMTP servers configured</div>
                                     </div>
                                 </div>
-                                <div class="summary-item">
-                                    <i class="fas fa-server"></i>
-                                    <div>
-                                        <span class="summary-label">SMTP</span>
-                                        <span class="summary-value" id="summarySmtp">-</span>
+                                
+                                <div class="preview-section">
+                                    <h4>📎 Attachments</h4>
+                                    <div class="attachments-summary" id="attachmentsSummary">
+                                        <div class="summary-stat">
+                                            <span class="stat-number" id="attachmentsCount">0</span>
+                                            <span class="stat-label">Files Attached</span>
+                                        </div>
+                                        <div class="attachments-list" id="attachmentsList">
+                                            <div class="empty-attachments">No attachments</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- Advanced Launch Options -->
                         <div class="launch-options">
-                            <h3>Sending Options</h3>
-                            <div class="options-grid">
-                                <label class="option-card">
-                                    <input type="radio" name="sendMode" value="dry_run" checked>
-                                    <div class="option-content">
-                                        <i class="fas fa-vial"></i>
-                                        <h4>Test Mode</h4>
-                                        <p>Simulate sending without actually sending emails</p>
+                            <h3>🚀 Launch Options</h3>
+                            <div class="options-container">
+                                <div class="send-mode-options">
+                                    <label class="option-card">
+                                        <input type="radio" name="sendMode" value="dry_run" checked>
+                                        <div class="option-content">
+                                            <i class="fas fa-vial"></i>
+                                            <h4>🧪 Test Mode</h4>
+                                            <p>Simulate the entire sending process without actually sending emails</p>
+                                            <small>Perfect for testing your configuration and seeing expected results</small>
+                                        </div>
+                                    </label>
+                                    <label class="option-card">
+                                        <input type="radio" name="sendMode" value="live">
+                                        <div class="option-content">
+                                            <i class="fas fa-rocket"></i>
+                                            <h4>🔴 Live Send</h4>
+                                            <p>Send emails to all recipients using SMTP rotation</p>
+                                            <small>⚠️ This will send actual emails to all recipients</small>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="advanced-options">
+                                    <h4>Advanced Settings</h4>
+                                    <div class="options-grid">
+                                        <div class="option-group">
+                                            <label for="batchSize">Batch Size</label>
+                                            <input type="number" id="batchSize" value="50" min="1" max="500">
+                                            <small>Process emails in batches</small>
+                                        </div>
+                                        <div class="option-group">
+                                            <label for="maxRetries">Max Retries</label>
+                                            <input type="number" id="maxRetries" value="3" min="1" max="10">
+                                            <small>Retry failed emails</small>
+                                        </div>
+                                        <div class="option-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="enableAnalytics" checked>
+                                                <span class="checkmark"></span>
+                                                Enable Detailed Analytics
+                                            </label>
+                                        </div>
+                                        <div class="option-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="pauseOnError">
+                                                <span class="checkmark"></span>
+                                                Pause on Critical Errors
+                                            </label>
+                                        </div>
                                     </div>
-                                </label>
-                                <label class="option-card">
-                                    <input type="radio" name="sendMode" value="live">
-                                    <div class="option-content">
-                                        <i class="fas fa-rocket"></i>
-                                        <h4>Live Send</h4>
-                                        <p>Send emails to all recipients immediately</p>
-                                    </div>
-                                </label>
+                                </div>
                             </div>
                         </div>
 
+                        <!-- Launch Button -->
                         <div class="launch-actions">
+                            <div class="launch-warning" id="launchWarning" style="display: none;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Complete all setup steps before launching</span>
+                            </div>
                             <button class="btn btn-danger btn-large" id="launchBtn" disabled>
                                 <i class="fas fa-rocket"></i>
                                 <span>Launch Campaign</span>
                             </button>
                         </div>
 
+                        <!-- Real-time Progress Section -->
                         <div class="progress-section" id="progressSection" style="display: none;">
-                            <h3>Sending Progress</h3>
-                            <div class="progress-container">
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="progressFill"></div>
+                            <h3>📊 Real-time Campaign Progress</h3>
+                            <div class="progress-dashboard">
+                                <div class="progress-stats-grid">
+                                    <div class="progress-stat">
+                                        <i class="fas fa-paper-plane"></i>
+                                        <div class="stat-content">
+                                            <span class="stat-number" id="sentCount">0</span>
+                                            <span class="stat-label">Sent</span>
+                                        </div>
+                                    </div>
+                                    <div class="progress-stat">
+                                        <i class="fas fa-exclamation-circle"></i>
+                                        <div class="stat-content">
+                                            <span class="stat-number" id="failedCount">0</span>
+                                            <span class="stat-label">Failed</span>
+                                        </div>
+                                    </div>
+                                    <div class="progress-stat">
+                                        <i class="fas fa-clock"></i>
+                                        <div class="stat-content">
+                                            <span class="stat-number" id="elapsedTime">0s</span>
+                                            <span class="stat-label">Elapsed</span>
+                                        </div>
+                                    </div>
+                                    <div class="progress-stat">
+                                        <i class="fas fa-sync-alt"></i>
+                                        <div class="stat-content">
+                                            <span class="stat-number" id="rotationCount">0</span>
+                                            <span class="stat-label">SMTP Rotations</span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="progress-stats">
-                                    <span>Sent: <strong id="sentCount">0</strong></span>
-                                    <span>Failed: <strong id="failedCount">0</strong></span>
-                                    <span>Total: <strong id="totalCount">0</strong></span>
+                                
+                                <div class="progress-container">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="progressFill"></div>
+                                        <span class="progress-text" id="progressText">0%</span>
+                                    </div>
+                                    <div class="progress-details">
+                                        <span id="progressDetails">Initializing...</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="current-smtp-status">
+                                    <h4>Current SMTP Server</h4>
+                                    <div class="smtp-status-card" id="currentSmtpCard">
+                                        <div class="smtp-info">
+                                            <span class="smtp-name" id="currentSmtpName">-</span>
+                                            <span class="smtp-usage" id="currentSmtpUsage">0 emails sent</span>
+                                        </div>
+                                        <div class="smtp-indicator">
+                                            <span class="status-dot active"></span>
+                                            <span>Active</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="live-log" id="liveLog"></div>
+                            
+                            <div class="live-log-section">
+                                <h4>📝 Live Activity Log</h4>
+                                <div class="live-log" id="liveLog">
+                                    <div class="log-entry initial">
+                                        <span class="log-time">--:--:--</span>
+                                        <span class="log-message">Ready to start campaign...</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
+                        <!-- Detailed Results Section -->
                         <div class="results-section" id="resultsSection" style="display: none;">
-                            <h3>Campaign Results</h3>
-                            <div class="results-container" id="resultsContainer">
-                                <!-- Results will be populated here -->
+                            <h3>📈 Detailed Campaign Results</h3>
+                            <div class="results-dashboard">
+                                <div class="results-summary-grid">
+                                    <div class="result-card success">
+                                        <i class="fas fa-check-circle"></i>
+                                        <div class="result-content">
+                                            <span class="result-number" id="finalSentCount">0</span>
+                                            <span class="result-label">Successfully Sent</span>
+                                            <span class="result-percentage" id="successPercentage">0%</span>
+                                        </div>
+                                    </div>
+                                    <div class="result-card failed">
+                                        <i class="fas fa-times-circle"></i>
+                                        <div class="result-content">
+                                            <span class="result-number" id="finalFailedCount">0</span>
+                                            <span class="result-label">Failed</span>
+                                            <span class="result-percentage" id="failurePercentage">0%</span>
+                                        </div>
+                                    </div>
+                                    <div class="result-card duration">
+                                        <i class="fas fa-stopwatch"></i>
+                                        <div class="result-content">
+                                            <span class="result-number" id="campaignDuration">0s</span>
+                                            <span class="result-label">Total Duration</span>
+                                            <span class="result-rate" id="emailsPerMinute">0/min</span>
+                                        </div>
+                                    </div>
+                                    <div class="result-card smtp">
+                                        <i class="fas fa-server"></i>
+                                        <div class="result-content">
+                                            <span class="result-number" id="smtpServersUsed">0</span>
+                                            <span class="result-label">SMTP Servers Used</span>
+                                            <span class="result-rotations" id="totalRotations">0 rotations</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- SMTP Usage Breakdown -->
+                                <div class="smtp-usage-breakdown">
+                                    <h4>🔄 SMTP Server Usage</h4>
+                                    <div class="smtp-usage-grid" id="smtpUsageGrid">
+                                        <!-- Will be populated dynamically -->
+                                    </div>
+                                </div>
+                                
+                                <!-- Failed Recipients Details -->
+                                <div class="failed-recipients-section" id="failedRecipientsSection" style="display: none;">
+                                    <h4>❌ Failed Recipients</h4>
+                                    <div class="failed-recipients-table">
+                                        <table class="results-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Email</th>
+                                                    <th>Error Reason</th>
+                                                    <th>SMTP Server</th>
+                                                    <th>Timestamp</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="failedRecipientsTable">
+                                                <!-- Will be populated dynamically -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                
+                                <!-- Export Options -->
+                                <div class="export-options">
+                                    <h4>📥 Export Results</h4>
+                                    <div class="export-buttons">
+                                        <button class="btn btn-outline" id="exportCsvBtn">
+                                            <i class="fas fa-file-csv"></i>
+                                            Export to CSV
+                                        </button>
+                                        <button class="btn btn-outline" id="exportJsonBtn">
+                                            <i class="fas fa-file-code"></i>
+                                            Export to JSON
+                                        </button>
+                                        <button class="btn btn-outline" id="printReportBtn">
+                                            <i class="fas fa-print"></i>
+                                            Print Report
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
