@@ -101,11 +101,37 @@ def run_campaign_from_file(campaign_name: str, dry_run: bool = True):
         print(f"📝 Template: {template_name}")
         print(f"📋 Subject: {template.get('subject')}")
         
-        # Simulate sending (or actually send if not dry_run)
+        # Initialize EmailSender for live mode
+        if not dry_run:
+            from termsender import SMTPConfig, EmailSender, EmailContent, EmailValidator
+            
+            # Create SMTP configuration
+            smtp_config = SMTPConfig(
+                host=smtp_config['host'],
+                port=smtp_config['port'],
+                username=smtp_config['username'],
+                password=smtp_config['password'],
+                use_tls=smtp_config.get('use_tls', True)
+            )
+            
+            # Create email sender
+            email_sender = EmailSender(smtp_config)
+            
+            # Test SMTP connection
+            print("🔗 Testing SMTP connection...")
+            try:
+                email_sender.test_connection()
+                print("✅ SMTP connection successful")
+            except Exception as e:
+                print(f"❌ SMTP connection failed: {e}")
+                return False
+        
+        # Execute campaign
         print("\n🎬 Starting campaign execution...")
         
         sent_count = 0
         failed_count = 0
+        failed_recipients = []
         
         for i, recipient in enumerate(recipients, 1):
             email = recipient.get('email', 'unknown')
@@ -114,19 +140,62 @@ def run_campaign_from_file(campaign_name: str, dry_run: bool = True):
                 print(f"  {i:3d}. 🧪 Would send to: {email}")
                 sent_count += 1
             else:
-                # Here you would integrate with the actual email sending logic
-                print(f"  {i:3d}. 📧 Sending to: {email}")
-                # For now, simulate success
-                sent_count += 1
+                try:
+                    # Merge recipient data with template variables
+                    render_vars = template_variables.copy()
+                    render_vars.update(recipient)
+                    
+                    # Render template
+                    rendered_template = config_manager.render_template(template_name, render_vars)
+                    if not rendered_template:
+                        raise Exception("Template rendering failed")
+                    
+                    # Create email content
+                    email_content = EmailContent(
+                        subject=rendered_template['subject'],
+                        body=rendered_template['body'],
+                        is_html=rendered_template.get('is_html', False)
+                    )
+                    
+                    # Set sender email
+                    sender_email = smtp_config.get('sender_email', smtp_config['username'])
+                    
+                    # Send email
+                    print(f"  {i:3d}. 📧 Sending to: {email}")
+                    email_sender.send_email(sender_email, [email], email_content)
+                    sent_count += 1
+                    
+                    # Add delay between emails
+                    campaign_settings = campaign.get('settings', {})
+                    delay = campaign_settings.get('delay_between_emails', 1)
+                    if delay > 0 and i < len(recipients):
+                        time.sleep(delay)
+                    
+                except Exception as e:
+                    print(f"  {i:3d}. ❌ Failed to send to {email}: {str(e)}")
+                    failed_count += 1
+                    failed_recipients.append({
+                        "email": email,
+                        "error": str(e)
+                    })
             
-            # Add small delay for realism
+            # Add small delay for display
             time.sleep(0.1)
         
         print(f"\n✅ Campaign completed!")
         print(f"📊 Results: {sent_count} sent, {failed_count} failed")
         
+        if failed_count > 0:
+            print(f"\n❌ Failed Recipients ({failed_count}):")
+            for failed in failed_recipients[:5]:  # Show first 5 failures
+                print(f"  - {failed['email']}: {failed['error']}")
+            if len(failed_recipients) > 5:
+                print(f"  ... and {len(failed_recipients) - 5} more")
+        
         if dry_run:
             print("🧪 This was a test run - no emails were actually sent")
+        else:
+            print("📧 Live campaign completed - emails were sent to recipients")
         
         return True
         

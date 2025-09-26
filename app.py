@@ -468,11 +468,25 @@ def run_campaign(campaign_name):
         template_name = campaign.get('template')
         template_variables = campaign.get('template_variables', {})
         
+        # Create SMTP config object
+        from termsender import SMTPConfig
+        smtp_obj = SMTPConfig(
+            host=smtp_config['host'],
+            port=smtp_config['port'],
+            username=smtp_config['username'],
+            password=smtp_config['password'],
+            use_tls=smtp_config.get('use_tls', True)
+        )
+        
         # Create sender
-        sender = WebEmailSender(smtp_config)
+        sender = WebEmailSender(smtp_obj)
         
         # Process template for each recipient
         results = {"sent": 0, "failed": 0, "failed_recipients": [], "total": len(recipients)}
+        
+        # Get campaign settings
+        campaign_settings = campaign.get('settings', config_manager.get_default_settings())
+        send_mode = campaign_settings.get('send_mode', 'dry_run')
         
         for recipient in recipients:
             try:
@@ -490,7 +504,19 @@ def run_campaign(campaign_name):
                     })
                     continue
                 
-                # Send email (simplified for file-based campaigns)
+                # Create email content object
+                from termsender import EmailContent
+                email_content = EmailContent(
+                    subject=content['subject'],
+                    body=content['body'],
+                    is_html=content.get('is_html', False)
+                )
+                
+                # Send email based on mode
+                if send_mode == 'live':
+                    sender_email = smtp_config.get('sender_email', smtp_config['username'])
+                    sender.send_email(sender_email, [recipient['email']], email_content)
+                
                 results["sent"] += 1
                 
             except Exception as e:
