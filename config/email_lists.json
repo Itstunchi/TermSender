@@ -1,0 +1,34 @@
+{
+  "email_lists": {
+    "customers": [
+      {
+        "email": "customer1@example.com",
+        "name": "John Doe",
+        "company": "Acme Corp",
+        "status": "active"
+      },
+      {
+        "email": "customer2@example.com", 
+        "name": "Jane Smith",
+        "company": "TechCorp",
+        "status": "active"
+      }
+    ],
+    "prospects": [
+      {
+        "email": "prospect1@example.com",
+        "name": "Bob Johnson",
+        "company": "StartupXYZ",
+        "status": "prospect"
+      }
+    ],
+    "newsletter": [
+      {
+        "email": "subscriber1@example.com",
+        "name": "Alice Brown",
+        "company": "WebAgency",
+        "status": "subscribed"
+      }
+    ]
+  }
+}

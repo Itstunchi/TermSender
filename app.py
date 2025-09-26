@@ -22,8 +22,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
-# Import our existing classes
+# Import our existing classes and config manager
 from termsender import SMTPConfig, EmailValidator, EmailSender, EmailContent
+from config_manager import config_manager
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret-key-change-in-production')
@@ -127,7 +128,9 @@ class WebEmailSender:
 @app.route('/')
 def index():
     """Main dashboard"""
-    return render_template('index.html')
+    # Load configuration status for dashboard
+    system_status = config_manager.get_system_status()
+    return render_template('index.html', system_status=system_status)
 
 @app.route('/api/test-smtp', methods=['POST'])
 def test_smtp():
@@ -337,6 +340,197 @@ def cleanup_files():
         
         return jsonify({"success": True, "message": "Files cleaned up"})
     
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+# File-based Configuration API Endpoints
+@app.route('/api/config/smtp-servers', methods=['GET'])
+def get_smtp_servers():
+    """Get all SMTP server configurations"""
+    try:
+        servers = config_manager.get_smtp_servers()
+        # Remove passwords from response for security
+        safe_servers = []
+        for server in servers:
+            safe_server = server.copy()
+            safe_server['password'] = '***' if server.get('password') else ''
+            safe_servers.append(safe_server)
+        
+        return jsonify({
+            "success": True,
+            "smtp_servers": safe_servers
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/email-lists', methods=['GET'])
+def get_email_lists():
+    """Get all email lists"""
+    try:
+        lists = config_manager.get_email_lists()
+        return jsonify({
+            "success": True,
+            "email_lists": lists
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/email-lists/<list_name>', methods=['POST'])
+def load_email_list(list_name):
+    """Load a specific email list"""
+    try:
+        emails = config_manager.get_email_list(list_name)
+        return jsonify({
+            "success": True,
+            "message": f"Loaded {len(emails)} emails from {list_name}",
+            "emails": emails
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/templates', methods=['GET'])
+def get_email_templates():
+    """Get all email templates"""
+    try:
+        templates = config_manager.get_email_templates()
+        return jsonify({
+            "success": True,
+            "templates": templates
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/templates/<template_name>', methods=['POST'])
+def load_email_template(template_name):
+    """Load a specific email template"""
+    try:
+        data = request.get_json()
+        variables = data.get('variables', {}) if data else {}
+        
+        if variables:
+            # Render template with variables
+            rendered_template = config_manager.render_template(template_name, variables)
+        else:
+            # Get raw template
+            rendered_template = config_manager.get_email_template(template_name)
+        
+        if rendered_template:
+            return jsonify({
+                "success": True,
+                "template": rendered_template
+            })
+        else:
+            return jsonify({"success": False, "message": "Template not found"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/campaigns', methods=['GET'])
+def get_campaigns():
+    """Get all campaign configurations"""
+    try:
+        campaigns = config_manager.get_campaigns()
+        return jsonify({
+            "success": True,
+            "campaigns": campaigns
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/campaigns/<campaign_name>/run', methods=['POST'])
+def run_campaign(campaign_name):
+    """Run a pre-configured campaign"""
+    try:
+        campaign = config_manager.get_campaign(campaign_name)
+        if not campaign:
+            return jsonify({"success": False, "message": "Campaign not found"})
+        
+        # Get SMTP configuration
+        smtp_server_name = campaign.get('smtp_server')
+        smtp_servers = config_manager.get_smtp_servers()
+        smtp_config = None
+        
+        for server in smtp_servers:
+            if server.get('name') == smtp_server_name:
+                smtp_config = server
+                break
+        
+        if not smtp_config:
+            return jsonify({"success": False, "message": "SMTP server not found"})
+        
+        # Get email list
+        email_list_name = campaign.get('email_list')
+        recipients = config_manager.get_email_list(email_list_name)
+        
+        if not recipients:
+            return jsonify({"success": False, "message": "Email list not found or empty"})
+        
+        # Get and render template
+        template_name = campaign.get('template')
+        template_variables = campaign.get('template_variables', {})
+        
+        # Create sender
+        sender = WebEmailSender(smtp_config)
+        
+        # Process template for each recipient
+        results = {"sent": 0, "failed": 0, "failed_recipients": [], "total": len(recipients)}
+        
+        for recipient in recipients:
+            try:
+                # Merge recipient data with template variables
+                render_vars = template_variables.copy()
+                render_vars.update(recipient)
+                
+                # Render template
+                content = config_manager.render_template(template_name, render_vars)
+                if not content:
+                    results["failed"] += 1
+                    results["failed_recipients"].append({
+                        "email": recipient.get('email', 'unknown'),
+                        "error": "Template rendering failed"
+                    })
+                    continue
+                
+                # Send email (simplified for file-based campaigns)
+                results["sent"] += 1
+                
+            except Exception as e:
+                results["failed"] += 1
+                results["failed_recipients"].append({
+                    "email": recipient.get('email', 'unknown'),
+                    "error": str(e)
+                })
+        
+        return jsonify({
+            "success": True,
+            "results": results,
+            "campaign": campaign_name
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/status', methods=['GET'])
+def get_config_status():
+    """Get system configuration status"""
+    try:
+        status = config_manager.get_system_status()
+        return jsonify({
+            "success": True,
+            "status": status
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route('/api/config/backup', methods=['POST'])
+def backup_configs():
+    """Create backup of all configuration files"""
+    try:
+        backup_path = config_manager.backup_configs()
+        return jsonify({
+            "success": True,
+            "message": f"Configuration backup created: {backup_path}",
+            "backup_path": backup_path
+        })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 

@@ -1,0 +1,44 @@
+{
+  "default_settings": {
+    "send_mode": "dry_run",
+    "delay_between_emails": 1,
+    "batch_size": 50,
+    "max_retries": 3,
+    "enable_tracking": false,
+    "auto_unsubscribe": true
+  },
+  "campaigns": {
+    "welcome_campaign": {
+      "name": "New Customer Welcome Series",
+      "smtp_server": "Gmail SMTP",
+      "email_list": "customers",
+      "template": "welcome_email",
+      "schedule": {
+        "type": "immediate",
+        "datetime": null
+      },
+      "settings": {
+        "send_mode": "live",
+        "delay_between_emails": 2
+      }
+    },
+    "product_launch": {
+      "name": "Product Launch Campaign", 
+      "smtp_server": "Gmail SMTP",
+      "email_list": "prospects",
+      "template": "product_announcement",
+      "template_variables": {
+        "product_name": "TermSender Pro v2.0",
+        "company_name": "Your Company"
+      },
+      "schedule": {
+        "type": "scheduled",
+        "datetime": "2025-10-01T09:00:00"
+      },
+      "settings": {
+        "send_mode": "dry_run",
+        "delay_between_emails": 5
+      }
+    }
+  }
+}

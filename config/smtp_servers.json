@@ -1,0 +1,34 @@
+{
+  "smtp_servers": [
+    {
+      "name": "Gmail SMTP",
+      "host": "smtp.gmail.com",
+      "port": 587,
+      "username": "your-email@gmail.com",
+      "password": "your-app-password",
+      "sender_email": "your-email@gmail.com",
+      "use_tls": true,
+      "enabled": true
+    },
+    {
+      "name": "Outlook SMTP",
+      "host": "smtp-mail.outlook.com",
+      "port": 587,
+      "username": "your-email@outlook.com",
+      "password": "your-password",
+      "sender_email": "your-email@outlook.com",
+      "use_tls": true,
+      "enabled": false
+    },
+    {
+      "name": "Custom SMTP",
+      "host": "mail.yourdomain.com",
+      "port": 587,
+      "username": "admin@yourdomain.com",
+      "password": "your-password",
+      "sender_email": "noreply@yourdomain.com",
+      "use_tls": true,
+      "enabled": false
+    }
+  ]
+}
