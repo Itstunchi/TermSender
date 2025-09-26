@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 TermSender Pro Web Application
@@ -14,7 +15,6 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import tempfile
 import uuid
-import glob # Import glob module for file searching
 
 from flask import Flask, render_template, request, jsonify, session, send_file
 from werkzeug.utils import secure_filename
@@ -26,52 +26,8 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 # Import our enhanced classes
+from config_manager import config_manager
 from termsender import SMTPRotationManager, AnalyticsManager, SMTPServer
-
-# Simple config manager implementation
-class SimpleConfigManager:
-    def get_smtp_servers(self):
-        try:
-            smtp_file = Path('config/smtp_servers.json')
-            if smtp_file.exists():
-                with open(smtp_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get('smtp_servers', [])
-            return []
-        except Exception:
-            return []
-    
-    def get_email_lists(self):
-        try:
-            lists_file = Path('config/email_lists.json')
-            if lists_file.exists():
-                with open(lists_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get('email_lists', {})
-            return {}
-        except Exception:
-            return {}
-    
-    def get_email_templates(self):
-        try:
-            templates_file = Path('config/email_templates.json')
-            if templates_file.exists():
-                with open(templates_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get('email_templates', {})
-            return {}
-        except Exception:
-            return {}
-    
-    def get_system_status(self):
-        return {
-            "smtp_servers_count": len(self.get_smtp_servers()),
-            "email_lists_count": len(self.get_email_lists()),
-            "templates_count": len(self.get_email_templates()),
-            "status": "ready"
-        }
-
-config_manager = SimpleConfigManager()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret-key-change-in-production')
@@ -111,17 +67,17 @@ class WebEmailSender:
                 enabled=config.get('enabled', True)
             )
             smtp_servers.append(server)
-
+        
         self.smtp_manager = SMTPRotationManager(smtp_servers, rotation_mode, rotation_value)
         self.analytics = AnalyticsManager()
 
-    def send_emails_async(self, content: dict, recipients: List[str], attachments: List[str] = None,
+    def send_emails_async(self, content: dict, recipients: List[str], attachments: List[str] = None, 
                          dry_run: bool = False, progress_callback=None):
         """Send emails with SMTP rotation and progress updates"""
-
+        
         campaign_id = f"web_campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         stats = self.analytics.start_campaign(campaign_id, len(recipients))
-
+        
         results = {
             "sent": 0,
             "failed": 0,
@@ -141,22 +97,22 @@ class WebEmailSender:
                     server = self.smtp_manager.rotate_server()
                     results["smtp_rotations"] += 1
                     results["current_smtp"] = server.name
-
+                
                 current_server = self.smtp_manager.get_current_server()
                 results["current_smtp"] = current_server.name
-
+                
                 # Update usage stats
                 if current_server.name not in results["smtp_usage"]:
                     results["smtp_usage"][current_server.name] = 0
                 results["smtp_usage"][current_server.name] += 1
-
+                
                 self.smtp_manager.record_email_sent()
                 results["sent"] = i + 1
                 time.sleep(0.1)  # Simulate processing
-
+                
                 if progress_callback:
                     progress_callback(results)
-
+            
             results["end_time"] = datetime.now().isoformat()
             self.analytics.end_campaign()
             return results
@@ -170,13 +126,13 @@ class WebEmailSender:
                         results["smtp_rotations"] += 1
                         results["current_smtp"] = new_server.name
                         self.analytics.record_smtp_rotation()
-
+                    
                     current_server = self.smtp_manager.get_current_server()
                     results["current_smtp"] = current_server.name
-
+                    
                     # Get SMTP connection
                     server_connection = self.smtp_manager.get_server_connection(current_server)
-
+                    
                     # Create message
                     msg = MIMEMultipart()
                     msg['From'] = current_server.sender_email
@@ -213,12 +169,12 @@ class WebEmailSender:
                     self.smtp_manager.record_email_sent()
                     self.analytics.record_email_sent(current_server.name)
                     results["sent"] += 1
-
+                    
                     # Update usage stats
                     if current_server.name not in results["smtp_usage"]:
                         results["smtp_usage"][current_server.name] = 0
                     results["smtp_usage"][current_server.name] += 1
-
+                    
                     time.sleep(1)  # Rate limiting
 
                 except Exception as e:
@@ -247,7 +203,7 @@ class WebEmailSender:
 def index():
     """Main dashboard with enhanced analytics"""
     system_status = config_manager.get_system_status()
-
+    
     # Load recent analytics
     analytics_file = Path("analytics/campaign_analytics.json")
     recent_campaigns = []
@@ -255,7 +211,7 @@ def index():
         with open(analytics_file, 'r') as f:
             all_campaigns = json.load(f)
             recent_campaigns = all_campaigns[-5:]  # Last 5 campaigns
-
+    
     system_status['recent_campaigns'] = recent_campaigns
     return render_template('index.html', system_status=system_status)
 
@@ -281,7 +237,7 @@ def test_smtp():
                     results.append({"server": server_config['name'], "status": "success"})
                 except Exception as e:
                     results.append({"server": server_config['name'], "status": "failed", "error": str(e)})
-
+            
             return jsonify({"success": True, "results": results})
         else:
             # Single server
@@ -347,7 +303,7 @@ def send_emails():
         recipients = data.get('recipients', [])
         attachments = data.get('attachments', [])
         dry_run = data.get('dry_run', False)
-
+        
         # Rotation settings
         rotation_mode = data.get('rotation_mode', 'email_count')
         rotation_value = data.get('rotation_value', 10)
@@ -358,10 +314,10 @@ def send_emails():
         # Detailed validation
         if not smtp_configs:
             return jsonify({"success": False, "message": "No SMTP servers configured"})
-
+        
         if not content or not content.get('subject') or not content.get('body'):
             return jsonify({"success": False, "message": "Email content is incomplete"})
-
+        
         if not recipients:
             return jsonify({"success": False, "message": "No recipients provided"})
 
@@ -405,7 +361,7 @@ def get_analytics():
     """Get comprehensive analytics data"""
     try:
         analytics_file = Path("analytics/campaign_analytics.json")
-
+        
         if not analytics_file.exists():
             return jsonify({
                 "success": True,
@@ -418,18 +374,18 @@ def get_analytics():
                     "smtp_usage_summary": {}
                 }
             })
-
+        
         with open(analytics_file, 'r') as f:
             campaigns = json.load(f)
-
+        
         # Calculate summary statistics
         total_campaigns = len(campaigns)
         total_emails_sent = sum(c.get('emails_sent', 0) for c in campaigns)
         total_emails_failed = sum(c.get('emails_failed', 0) for c in campaigns)
-
+        
         success_rates = [c.get('success_rate', 0) for c in campaigns if c.get('success_rate') is not None]
         average_success_rate = sum(success_rates) / len(success_rates) if success_rates else 0
-
+        
         # SMTP usage summary
         smtp_usage_summary = {}
         for campaign in campaigns:
@@ -438,7 +394,7 @@ def get_analytics():
                 if smtp_name not in smtp_usage_summary:
                     smtp_usage_summary[smtp_name] = 0
                 smtp_usage_summary[smtp_name] += count
-
+        
         return jsonify({
             "success": True,
             "data": {
@@ -450,12 +406,12 @@ def get_analytics():
                 "smtp_usage_summary": smtp_usage_summary
             }
         })
-
+        
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
 @app.route('/api/config/smtp-servers', methods=['GET'])
-def get_config_smtp_servers():
+def get_smtp_servers():
     """Get configured SMTP servers"""
     try:
         smtp_servers = config_manager.get_smtp_servers()
@@ -520,7 +476,7 @@ def upload_csv():
             # Enhanced processing with domain analysis
             processed_data = []
             domains = {}
-
+            
             for _, row in df.iterrows():
                 email = str(row[email_col]).strip().lower()
                 if validate_email_address(email):
@@ -529,11 +485,11 @@ def upload_csv():
                     for col in df.columns:
                         if col != email_col:
                             row_data[col] = str(row[col]) if pd.notna(row[col]) else ""
-
+                    
                     # Track domains
                     domain = email.split('@')[1] if '@' in email else 'unknown'
                     domains[domain] = domains.get(domain, 0) + 1
-
+                    
                     processed_data.append(row_data)
 
             # Clean up file
@@ -594,92 +550,24 @@ def upload_attachment():
 
 @app.route('/api/cleanup-files', methods=['POST'])
 def cleanup_files():
+    """Clean up uploaded files"""
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data provided"})
+
         file_ids = data.get('file_ids', [])
 
-        # Clean up specified files
         for file_id in file_ids:
-            file_path = os.path.join(UPLOAD_FOLDER, f"{file_id}_*")
-            for file in glob.glob(file_path):
-                try:
-                    os.remove(file)
-                except OSError:
-                    pass
+            # Find and remove files with this ID
+            for file_path in UPLOAD_FOLDER.glob(f"{file_id}_*"):
+                if file_path.exists():
+                    os.remove(file_path)
 
-        return jsonify({'success': True, 'message': 'Files cleaned up'})
+        return jsonify({"success": True, "message": "Files cleaned up"})
+
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/get-smtp-servers', methods=['GET'])
-def api_get_smtp_servers():
-    try:
-        smtp_file = os.path.join('config', 'smtp_servers.json')
-        if os.path.exists(smtp_file):
-            with open(smtp_file, 'r') as f:
-                data = json.load(f)
-                return jsonify({'success': True, 'servers': data.get('smtp_servers', [])})
-        return jsonify({'success': True, 'servers': []})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/save-smtp-servers', methods=['POST'])
-def save_smtp_servers():
-    try:
-        data = request.get_json()
-        servers = data.get('servers', [])
-
-        smtp_file = os.path.join('config', 'smtp_servers.json')
-        os.makedirs('config', exist_ok=True)
-
-        # Load existing config or create new one
-        config_data = {'smtp_servers': servers, 'rotation_settings': {}}
-        if os.path.exists(smtp_file):
-            with open(smtp_file, 'r') as f:
-                existing_data = json.load(f)
-                config_data['rotation_settings'] = existing_data.get('rotation_settings', {})
-
-        with open(smtp_file, 'w') as f:
-            json.dump(config_data, f, indent=2)
-
-        return jsonify({'success': True, 'message': 'SMTP servers saved'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/get-rotation-settings', methods=['GET'])
-def get_rotation_settings():
-    try:
-        smtp_file = os.path.join('config', 'smtp_servers.json')
-        if os.path.exists(smtp_file):
-            with open(smtp_file, 'r') as f:
-                data = json.load(f)
-                return jsonify({'success': True, 'settings': data.get('rotation_settings', {})})
-        return jsonify({'success': True, 'settings': {}})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/save-rotation-settings', methods=['POST'])
-def save_rotation_settings():
-    try:
-        data = request.get_json()
-        settings = data.get('settings', {})
-
-        smtp_file = os.path.join('config', 'smtp_servers.json')
-        os.makedirs('config', exist_ok=True)
-
-        # Load existing config or create new one
-        config_data = {'smtp_servers': [], 'rotation_settings': settings}
-        if os.path.exists(smtp_file):
-            with open(smtp_file, 'r') as f:
-                existing_data = json.load(f)
-                config_data['smtp_servers'] = existing_data.get('smtp_servers', [])
-
-        with open(smtp_file, 'w') as f:
-            json.dump(config_data, f, indent=2)
-
-        return jsonify({'success': True, 'message': 'Rotation settings saved'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({"success": False, "message": str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
