@@ -126,6 +126,19 @@ body {
     animation: pulse 1s infinite;
 }
 
+/* Settings Icon Status */
+#settingsIcon.status-online {
+    color: var(--brand-success);
+}
+
+#settingsIcon.status-pending {
+    color: var(--text-muted);
+}
+
+#settingsIcon.status-issue {
+    color: var(--brand-danger);
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }

@@ -44,6 +44,9 @@ class TermSenderApp {
 
         this.setupEventListeners();
 
+        // Update header status immediately
+        this.updateHeaderStatus();
+
         // Only show compliance modal if not already accepted
         const complianceAccepted = sessionStorage.getItem('complianceAccepted');
         if (!complianceAccepted) {
@@ -100,8 +103,16 @@ class TermSenderApp {
         // Compliance Modal
         this.setupComplianceEventListeners();
 
-        // Settings Icon click
+        // Settings Icon click - both button and icon
+        const settingsBtn = document.getElementById('settingsBtn');
         const settingsIcon = document.getElementById('settingsIcon');
+        
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                this.showSettingsModal();
+            });
+        }
+        
         if (settingsIcon) {
             settingsIcon.addEventListener('click', () => {
                 this.showSettingsModal();
@@ -1226,9 +1237,22 @@ class TermSenderApp {
     async launchCampaign() {
         // Validate setup
         const enabledServers = this.smtpServers.filter(s => s.enabled);
-        if (enabledServers.length === 0 || !this.emailContent || this.recipients.length === 0) {
-            this.showNotification('Please complete all setup steps first', 'error');
-            this.updateLaunchButton();
+        
+        if (enabledServers.length === 0) {
+            this.showNotification('No SMTP servers configured or enabled', 'error');
+            this.navigateToSection('smtp');
+            return;
+        }
+        
+        if (!this.emailContent) {
+            this.showNotification('Please compose your email content first', 'error');
+            this.navigateToSection('compose');
+            return;
+        }
+        
+        if (this.recipients.length === 0) {
+            this.showNotification('Please add recipients first', 'error');
+            this.navigateToSection('recipients');
             return;
         }
 
@@ -1560,8 +1584,9 @@ class TermSenderApp {
 
     // Dashboard Updates
     updateDashboard() {
-        // Update SMTP status
+        // Update SMTP status and header
         this.updateSettingsStatus();
+        this.updateHeaderStatus();
 
         // Update recipients status
         const recipientsStatus = document.getElementById('recipientsStatus');
@@ -1677,9 +1702,16 @@ class TermSenderApp {
         const modal = document.getElementById('settingsModal');
         if (!modal) return;
 
-        // Populate settings form
-        document.getElementById('smtpTestInterval').value = this.settings?.smtp_test_interval || 60;
-        document.getElementById('analyticsEnabled').checked = this.settings?.analytics_enabled !== false; // Default to true
+        // Populate settings form if elements exist
+        const smtpTestInterval = document.getElementById('smtpTestInterval');
+        const analyticsEnabled = document.getElementById('analyticsEnabled');
+        const apiEndpoint = document.getElementById('apiEndpoint');
+        const statusCheckInterval = document.getElementById('statusCheckInterval');
+
+        if (smtpTestInterval) smtpTestInterval.value = this.settings?.smtp_test_interval || 60;
+        if (analyticsEnabled) analyticsEnabled.checked = this.settings?.analytics_enabled !== false;
+        if (apiEndpoint) apiEndpoint.value = this.settings?.api_endpoint || 'http://localhost:5000/api';
+        if (statusCheckInterval) statusCheckInterval.value = this.settings?.status_check_interval || 30;
 
         modal.style.display = 'flex';
         this.updateSettingsStatus(); // Update status indicators within the modal
@@ -1693,17 +1725,45 @@ class TermSenderApp {
     }
 
     saveSettings() {
-        const smtpTestInterval = parseInt(document.getElementById('smtpTestInterval')?.value);
-        const analyticsEnabled = document.getElementById('analyticsEnabled')?.checked;
+        const smtpTestInterval = parseInt(document.getElementById('smtpTestInterval')?.value || 60);
+        const analyticsEnabled = document.getElementById('analyticsEnabled')?.checked !== false;
+        const apiEndpoint = document.getElementById('apiEndpoint')?.value || 'http://localhost:5000/api';
+        const statusCheckInterval = parseInt(document.getElementById('statusCheckInterval')?.value || 30);
 
         this.settings = {
-            smtp_test_interval: smtpTestInterval || 60,
-            analytics_enabled: analyticsEnabled
+            smtp_test_interval: smtpTestInterval,
+            analytics_enabled: analyticsEnabled,
+            api_endpoint: apiEndpoint,
+            status_check_interval: statusCheckInterval
         };
 
         this.showNotification('Settings saved successfully!', 'success');
         this.hideSettingsModal();
-        // Potentially restart timers or services if interval changes
+        this.updateHeaderStatus();
+        this.addActivity('Settings updated');
+    }
+
+    updateHeaderStatus() {
+        const headerStatusDot = document.getElementById('headerStatusDot');
+        const headerStatusText = document.getElementById('headerStatusText');
+        
+        if (!headerStatusDot || !headerStatusText) return;
+
+        const enabledServers = this.smtpServers.filter(s => s.enabled);
+
+        if (enabledServers.length > 0) {
+            headerStatusDot.classList.remove('offline', 'error');
+            headerStatusDot.classList.add('online');
+            headerStatusText.textContent = `Online - ${enabledServers.length} server(s) ready`;
+        } else if (this.smtpServers.length > 0) {
+            headerStatusDot.classList.remove('online', 'error');
+            headerStatusDot.classList.add('offline');
+            headerStatusText.textContent = 'Offline - No active servers';
+        } else {
+            headerStatusDot.classList.remove('online', 'offline');
+            headerStatusDot.classList.add('error');
+            headerStatusText.textContent = 'Configuration required';
+        }
     }
 
     updateSettingsStatus() {
@@ -1725,6 +1785,9 @@ class TermSenderApp {
             settingsIcon.classList.add('status-issue');
             settingsIcon.title = 'Issue (No SMTP servers configured)';
         }
+
+        // Also update header status
+        this.updateHeaderStatus();
     }
 
     // UI Helpers
@@ -1782,9 +1845,37 @@ class TermSenderApp {
         const remainingSeconds = seconds % 60;
         return `${minutes}m ${remainingSeconds}s`;
     }
+
+    calculateDuration(startTime, endTime) {
+        if (!startTime || !endTime) return '0s';
+        const start = new Date(startTime);
+        const end = new Date(endTime);
+        const durationMs = end - start;
+        const durationSeconds = Math.floor(durationMs / 1000);
+        return this.formatTime(durationSeconds);
+    }
 }
 
-// Initialize app when DOM is loaded
+startProgressTimer() {
+        this.progressTimer = setInterval(() => {
+            if (this.campaignActive && this.campaignProgress.start_time) {
+                const elapsed = Math.floor((new Date() - new Date(this.campaignProgress.start_time)) / 1000);
+                const elapsedTimeElement = document.getElementById('elapsedTime');
+                if (elapsedTimeElement) {
+                    elapsedTimeElement.textContent = this.formatTime(elapsed);
+                }
+            }
+        }, 1000);
+    }
+
+    stopProgressTimer() {
+        if (this.progressTimer) {
+            clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+    }
+
+    // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing TermSender Pro...');
     window.app = new TermSenderApp();
