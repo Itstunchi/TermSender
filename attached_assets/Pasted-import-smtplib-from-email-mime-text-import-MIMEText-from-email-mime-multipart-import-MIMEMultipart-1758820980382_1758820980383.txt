@@ -1,0 +1,113 @@
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt, Confirm
+import pandas as pd
+import validators  # Note: email-validator lib, but using validators for simplicity in MVP; switch later
+import os
+
+app = typer.Typer()
+console = Console()
+
+def validate_email(email):
+    return validators.email(email) is True
+
+def load_leads_from_csv(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File {file_path} not found.")
+    df = pd.read_csv(file_path)
+    if 'email' not in df.columns:
+        raise ValueError("CSV must have 'email' column.")
+    emails = df['email'].tolist()
+    valid_emails = [e for e in emails if validate_email(e)]
+    if len(valid_emails) != len(emails):
+        console.print(f"[yellow]Invalid emails skipped: {len(emails) - len(valid_emails)}[/yellow]")
+    return list(set(valid_emails))  # Deduplicate
+
+def send_email(smtp_host, smtp_port, username, password, use_tls, sender_email, recipients, subject, body, dry_run=False):
+    if dry_run:
+        for recipient in recipients:
+            console.print(f"[yellow]Dry-run: Would send to {recipient}[/yellow]")
+        console.print("[bold yellow]Dry-run complete. No emails sent.[/bold yellow]")
+        return
+    
+    try:
+        server = smtplib.SMTP(smtp_host, smtp_port)
+        if use_tls:
+            server.starttls()
+        server.login(username, password)
+        
+        sent_count = 0
+        failed = []
+        for recipient in recipients:
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = recipient
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+            try:
+                server.sendmail(sender_email, recipient, msg.as_string())
+                console.print(f"[green]Sent to {recipient}[/green]")
+                sent_count += 1
+            except Exception as e:
+                console.print(f"[red]Failed to send to {recipient}: {e}[/red]")
+                failed.append(recipient)
+        
+        server.quit()
+        console.print(f"[bold green]Sent: {sent_count} | Failed: {len(failed)}[/bold green]")
+        if failed:
+            console.print(f"[yellow]Failed emails: {', '.join(failed)}[/yellow]")
+    except Exception as e:
+        console.print(f"[bold red]SMTP Error: {e}[/bold red]")
+
+@app.command()
+def main():
+    console.print(Panel("Welcome to TermSender MVP - Ethical Bulk Email Sender\nWarning: Ensure compliance with anti-spam laws (CAN-SPAM/GDPR). Use only for consented lists.", title="TermSender", style="bold cyan", expand=False))
+    
+    # Section: SMTP Config
+    console.print(Panel("Enter SMTP details. For Gmail, use app password and enable less secure apps if needed.", title="SMTP Configuration", style="bold blue"))
+    smtp_host = Prompt.ask("SMTP Host", default="smtp.gmail.com")
+    smtp_port = int(Prompt.ask("SMTP Port", default="587"))
+    username = Prompt.ask("SMTP Username")
+    password = Prompt.ask("SMTP Password", password=True)
+    use_tls = Confirm.ask("Use TLS?", default=True)
+    sender_email = Prompt.ask("Sender Email")
+    
+    # Section: Content
+    console.print(Panel("Compose your email content.", title="Content Selection", style="bold blue"))
+    subject = Prompt.ask("Email Subject")
+    body = Prompt.ask("Email Body (plain text)")
+    
+    # Section: Leads
+    console.print(Panel("Load recipients. For MVP, supports CSV import or manual.", title="Leads Management", style="bold blue"))
+    import_method = Prompt.ask("Import method (csv/manual)", default="manual")
+    if import_method == "csv":
+        file_path = Prompt.ask("CSV File Path")
+        try:
+            recipients = load_leads_from_csv(file_path)
+        except Exception as e:
+            console.print(f"[red]Error loading CSV: {e}[/red]")
+            return
+    else:
+        recipients_input = Prompt.ask("Enter emails (comma-separated)")
+        recipients = [e.strip() for e in recipients_input.split(",") if validate_email(e.strip())]
+    
+    if not recipients:
+        console.print("[red]No valid recipients. Exiting.[/red]")
+        return
+    
+    # Section: Settings (Basic for MVP)
+    console.print(Panel("Review settings. MVP: No rotation, basic dry-run.", title="Settings & Compliance", style="bold blue"))
+    dry_run = Confirm.ask("Dry-run mode? (Simulate without sending)", default=False)
+    confirm_send = Confirm.ask(f"Confirm send to {len(recipients)} recipients? (Ensure legal compliance)")
+    if not confirm_send:
+        console.print("[yellow]Send cancelled.[/yellow]")
+        return
+    
+    send_email(smtp_host, smtp_port, username, password, use_tls, sender_email, recipients, subject, body, dry_run)
+
+if __name__ == "__main__":
+    app()
