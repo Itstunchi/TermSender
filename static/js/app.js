@@ -42,9 +42,12 @@ class TermSenderApp {
         // Make sure loading is hidden initially
         this.hideLoading();
 
+        // Load saved data first
+        this.loadSavedData();
+
         this.setupEventListeners();
 
-        // Update header status immediately
+        // Update header status after loading data
         this.updateHeaderStatus();
 
         // Only show compliance modal if not already accepted
@@ -379,18 +382,22 @@ class TermSenderApp {
         // Update content sections
         document.querySelectorAll('.content-section').forEach(section_el => {
             section_el.classList.remove('active');
+            section_el.style.display = 'none';
         });
 
         const targetSection = document.getElementById(section);
         if (targetSection) {
             targetSection.classList.add('active');
+            targetSection.style.display = 'block';
         }
 
         this.currentSection = section;
 
-        // Update send section summary when navigating to it
+        // Update section-specific content
         if (section === 'send') {
             this.updateSendSummary();
+        } else if (section === 'smtp') {
+            this.updateSMTPServersList();
         }
     }
 
@@ -530,6 +537,7 @@ class TermSenderApp {
         this.updateSMTPServersList();
         this.updateDashboard();
         this.hideSMTPModal();
+        this.saveDataToFiles(); // Auto-save
     }
 
     removeSMTPServer(index) {
@@ -584,6 +592,7 @@ class TermSenderApp {
         this.showNotification('Rotation settings saved successfully!', 'success');
         this.addActivity('Updated SMTP rotation settings');
         this.updateDashboard();
+        this.saveDataToFiles(); // Auto-save
     }
 
     updateSMTPServersList() {
@@ -873,6 +882,9 @@ class TermSenderApp {
                 </td>
             </tr>
         `).join('');
+        
+        // Auto-save recipients
+        this.saveDataToFiles();
     }
 
     removeRecipient(index) {
@@ -970,6 +982,7 @@ class TermSenderApp {
         this.updateDashboard();
         this.showNotification('Email content saved successfully!', 'success');
         this.addActivity('Email content composed and saved');
+        this.saveDataToFiles(); // Auto-save
     }
 
     // Attachments
@@ -1754,7 +1767,7 @@ class TermSenderApp {
         if (enabledServers.length > 0) {
             headerStatusDot.classList.remove('offline', 'error');
             headerStatusDot.classList.add('online');
-            headerStatusText.textContent = `Online - ${enabledServers.length} server(s) ready`;
+            headerStatusText.textContent = `Ready - ${enabledServers.length} server(s) configured`;
         } else if (this.smtpServers.length > 0) {
             headerStatusDot.classList.remove('online', 'error');
             headerStatusDot.classList.add('offline');
@@ -1762,7 +1775,7 @@ class TermSenderApp {
         } else {
             headerStatusDot.classList.remove('online', 'offline');
             headerStatusDot.classList.add('error');
-            headerStatusText.textContent = 'Configuration required';
+            headerStatusText.textContent = 'Setup required';
         }
     }
 
@@ -1854,7 +1867,95 @@ class TermSenderApp {
         const durationSeconds = Math.floor(durationMs / 1000);
         return this.formatTime(durationSeconds);
     }
-}
+
+    // Data Persistence Methods
+    async loadSavedData() {
+        try {
+            // Load SMTP servers
+            const smtpResponse = await fetch('/api/get-smtp-servers');
+            if (smtpResponse.ok) {
+                const smtpData = await smtpResponse.json();
+                if (smtpData.success && smtpData.servers) {
+                    this.smtpServers = smtpData.servers;
+                }
+            }
+
+            // Load rotation settings
+            const rotationResponse = await fetch('/api/get-rotation-settings');
+            if (rotationResponse.ok) {
+                const rotationData = await rotationResponse.json();
+                if (rotationData.success && rotationData.settings) {
+                    this.rotationSettings = { ...this.rotationSettings, ...rotationData.settings };
+                }
+            }
+
+            // Load saved recipients
+            const recipientsData = localStorage.getItem('termsender_recipients');
+            if (recipientsData) {
+                this.recipients = JSON.parse(recipientsData);
+            }
+
+            // Load saved email content
+            const emailData = localStorage.getItem('termsender_email_content');
+            if (emailData) {
+                this.emailContent = JSON.parse(emailData);
+                this.populateEmailForm();
+            }
+
+            console.log('Saved data loaded successfully');
+        } catch (error) {
+            console.error('Error loading saved data:', error);
+        }
+    }
+
+    async saveDataToFiles() {
+        try {
+            // Save SMTP servers
+            await fetch('/api/save-smtp-servers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ servers: this.smtpServers })
+            });
+
+            // Save rotation settings
+            await fetch('/api/save-rotation-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ settings: this.rotationSettings })
+            });
+
+            // Save recipients to localStorage
+            localStorage.setItem('termsender_recipients', JSON.stringify(this.recipients));
+
+            // Save email content to localStorage
+            if (this.emailContent) {
+                localStorage.setItem('termsender_email_content', JSON.stringify(this.emailContent));
+            }
+
+        } catch (error) {
+            console.error('Error saving data:', error);
+        }
+    }
+
+    populateEmailForm() {
+        if (!this.emailContent) return;
+
+        const subjectField = document.getElementById('emailSubject');
+        const htmlEditor = document.getElementById('emailBody');
+        const plainEditor = document.getElementById('emailBodyPlain');
+
+        if (subjectField) subjectField.value = this.emailContent.subject || '';
+
+        if (this.emailContent.is_html && htmlEditor) {
+            htmlEditor.innerHTML = this.emailContent.body || '';
+            this.switchEmailFormat('html');
+        } else if (plainEditor) {
+            plainEditor.value = this.emailContent.body || '';
+            this.switchEmailFormat('plain');
+        }
+
+        this.updatePreview();
+    }
 
 startProgressTimer() {
         this.progressTimer = setInterval(() => {
