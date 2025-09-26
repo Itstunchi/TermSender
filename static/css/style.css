@@ -107,8 +107,23 @@ body {
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    background: var(--text-muted);
+    transition: var(--transition-normal);
+}
+
+.status-dot.online {
     background: var(--brand-success);
     animation: pulse 2s infinite;
+}
+
+.status-dot.offline {
+    background: var(--text-muted);
+    animation: none;
+}
+
+.status-dot.error {
+    background: var(--brand-danger);
+    animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
@@ -1518,6 +1533,219 @@ html {
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: var(--shadow-lg);
+}
+
+.large-modal {
+    max-width: 1000px;
+    width: 95%;
+}
+
+/* Settings Modal Styles */
+.settings-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.settings-section {
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+}
+
+.settings-section h4 {
+    margin: 0 0 16px 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.setting-item label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.setting-item input,
+.setting-item select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+/* Activity Table Styles */
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.activity-table-container {
+    background: var(--bg-input);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.activity-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.activity-table th,
+.activity-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8125rem;
+}
+
+.activity-table th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+    color: var(--text-primary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.activity-table td {
+    color: var(--text-primary);
+}
+
+.initial-row td {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.initial-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.status-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-icon.success {
+    background: var(--brand-success);
+}
+
+.status-icon.failed {
+    background: var(--brand-danger);
+}
+
+.status-icon.info {
+    background: var(--brand-primary);
+}
+
+.email-cell {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subject-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.time-cell {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+/* Full Activity Modal Styles */
+.logs-filters {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.filter-group label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.filter-group input,
+.filter-group select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+}
+
+.full-activity-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.full-activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-input);
+}
+
+.full-activity-table th,
+.full-activity-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8125rem;
+}
+
+.full-activity-table th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+    color: var(--text-primary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 
 .modal-header {

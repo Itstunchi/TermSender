@@ -20,8 +20,8 @@
             </div>
             <div class="header-right">
                 <div class="status-indicator">
-                    <span class="status-dot"></span>
-                    <span>Ready</span>
+                    <span class="status-dot" id="headerStatusDot"></span>
+                    <span id="headerStatusText">Initializing...</span>
                 </div>
                 <button class="btn btn-secondary" id="settingsBtn">
                     <i class="fas fa-cog"></i>
@@ -170,7 +170,7 @@
                                     Add SMTP Server
                                 </button>
                             </div>
-                            
+
                             <div class="smtp-servers-list" id="smtpServersList">
                                 <div class="empty-state">
                                     <i class="fas fa-server"></i>
@@ -191,25 +191,25 @@
                                         <option value="time_based">By Time Duration</option>
                                     </select>
                                 </div>
-                                
+
                                 <div class="setting-group" id="emailCountSetting">
                                     <label for="emailsPerRotation">Emails per Rotation</label>
                                     <input type="number" id="emailsPerRotation" value="10" min="1" max="100">
                                     <small>Switch SMTP after N emails</small>
                                 </div>
-                                
+
                                 <div class="setting-group" id="timeDurationSetting" style="display: none;">
                                     <label for="secondsPerRotation">Seconds per Rotation</label>
                                     <input type="number" id="secondsPerRotation" value="30" min="5" max="300">
                                     <small>Switch SMTP after N seconds</small>
                                 </div>
-                                
+
                                 <div class="setting-group">
                                     <label for="delayBetweenEmails">Delay Between Emails (seconds)</label>
                                     <input type="number" id="delayBetweenEmails" value="1" min="0.5" max="10" step="0.5">
                                     <small>Recommended: 1-3 seconds</small>
                                 </div>
-                                
+
                                 <div class="setting-group">
                                     <label class="checkbox-label">
                                         <input type="checkbox" id="enableFailover" checked>
@@ -218,14 +218,14 @@
                                     </label>
                                     <small>Automatically switch to next server if one fails</small>
                                 </div>
-                                
+
                                 <div class="setting-group">
                                     <label for="maxRetries">Max Retries per Server</label>
                                     <input type="number" id="maxRetries" value="3" min="1" max="10">
                                     <small>Retry attempts before switching server</small>
                                 </div>
                             </div>
-                            
+
                             <div class="form-actions">
                                 <button type="button" class="btn btn-secondary" id="testAllSmtpBtn">
                                     <i class="fas fa-vial"></i>
@@ -555,7 +555,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="preview-section">
                                     <h4>👥 Recipients Summary</h4>
                                     <div class="recipients-summary">
@@ -568,14 +568,14 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="preview-section">
                                     <h4>🔄 SMTP Configuration</h4>
                                     <div class="smtp-summary" id="smtpSummary">
                                         <div class="empty-smtp">No SMTP servers configured</div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="preview-section">
                                     <h4>📎 Attachments</h4>
                                     <div class="attachments-summary" id="attachmentsSummary">
@@ -615,7 +615,7 @@
                                         </div>
                                     </label>
                                 </div>
-                                
+
                                 <div class="advanced-options">
                                     <h4>Advanced Settings</h4>
                                     <div class="options-grid">
@@ -694,7 +694,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="progress-container">
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="progressFill"></div>
@@ -704,7 +704,7 @@
                                         <span id="progressDetails">Initializing...</span>
                                     </div>
                                 </div>
-                                
+
                                 <div class="current-smtp-status">
                                     <h4>Current SMTP Server</h4>
                                     <div class="smtp-status-card" id="currentSmtpCard">
@@ -719,14 +719,35 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div class="live-log-section">
-                                <h4>📝 Live Activity Log</h4>
-                                <div class="live-log" id="liveLog">
-                                    <div class="log-entry initial">
-                                        <span class="log-time">--:--:--</span>
-                                        <span class="log-message">Ready to start campaign...</span>
-                                    </div>
+                                <div class="log-header">
+                                    <h4>📝 Live Activity Log</h4>
+                                    <button class="btn btn-sm btn-outline" id="viewAllLogsBtn" style="display: none;">
+                                        <i class="fas fa-expand-arrows-alt"></i>
+                                        View All
+                                    </button>
+                                </div>
+                                <div class="activity-table-container" id="activityTableContainer">
+                                    <table class="activity-table" id="activityTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Status</th>
+                                                <th>Email</th>
+                                                <th>Subject</th>
+                                                <th>SMTP</th>
+                                                <th>Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="activityTableBody">
+                                            <tr class="initial-row">
+                                                <td colspan="5" class="initial-message">
+                                                    <i class="fas fa-info-circle"></i>
+                                                    Campaign ready to start...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
@@ -769,7 +790,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <!-- SMTP Usage Breakdown -->
                                 <div class="smtp-usage-breakdown">
                                     <h4>🔄 SMTP Server Usage</h4>
@@ -777,7 +798,7 @@
                                         <!-- Will be populated dynamically -->
                                     </div>
                                 </div>
-                                
+
                                 <!-- Failed Recipients Details -->
                                 <div class="failed-recipients-section" id="failedRecipientsSection" style="display: none;">
                                     <h4>❌ Failed Recipients</h4>
@@ -797,7 +818,7 @@
                                         </table>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Export Options -->
                                 <div class="export-options">
                                     <h4>📥 Export Results</h4>
@@ -845,7 +866,31 @@
                 <button class="btn btn-primary" id="acceptCompliance">I Understand and Agree</button>
             </div>
         </div>
-    </div></div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="modal-close" id="closeSettingsModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Settings form will go here -->
+                <div class="form-group">
+                    <label for="apiEndpoint">API Endpoint</label>
+                    <input type="text" id="apiEndpoint" placeholder="http://localhost:5000/api">
+                </div>
+                <div class="form-group">
+                    <label for="statusCheckInterval">Status Check Interval (seconds)</label>
+                    <input type="number" id="statusCheckInterval" value="30" min="5">
+                </div>
+                <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay" style="display: none;">

@@ -1,4 +1,3 @@
-
 /**
  * TermSender Pro - JavaScript Application
  * Modern email campaign management interface
@@ -22,18 +21,29 @@ class TermSenderApp {
         this.isReady = false;
         this.isLoading = false;
         this.editingSmtpIndex = -1;  // For editing existing SMTP servers
-        
+        this.campaignActive = false;
+        this.campaignProgress = {
+            sent: 0,
+            failed: 0,
+            total: 0,
+            current_smtp: '-',
+            smtp_usage: {},
+            smtp_rotations: 0,
+            start_time: null,
+            end_time: null
+        };
+
         this.init();
     }
 
     init() {
         console.log('Initializing TermSender Pro...');
-        
+
         // Make sure loading is hidden initially
         this.hideLoading();
-        
+
         this.setupEventListeners();
-        
+
         // Only show compliance modal if not already accepted
         const complianceAccepted = sessionStorage.getItem('complianceAccepted');
         if (!complianceAccepted) {
@@ -42,8 +52,9 @@ class TermSenderApp {
                 this.showComplianceModal();
             }, 100);
         }
-        
+
         this.updateDashboard();
+        this.updateSettingsStatus();
         console.log('TermSender Pro initialized successfully');
     }
 
@@ -61,40 +72,59 @@ class TermSenderApp {
             card.addEventListener('click', (e) => {
                 const cardIcon = e.currentTarget.querySelector('.card-icon');
                 let section = 'dashboard';
-                
+
                 if (cardIcon.classList.contains('smtp-icon')) section = 'smtp';
                 else if (cardIcon.classList.contains('recipients-icon')) section = 'recipients';
                 else if (cardIcon.classList.contains('compose-icon')) section = 'compose';
                 else if (cardIcon.classList.contains('send-icon')) section = 'send';
-                
+
                 this.navigateToSection(section);
             });
         });
 
         // SMTP Form
         this.setupSMTPEventListeners();
-        
+
         // Recipients
         this.setupRecipientsEventListeners();
-        
+
         // Compose
         this.setupComposeEventListeners();
-        
+
         // Attachments
         this.setupAttachmentsEventListeners();
-        
+
         // Send
         this.setupSendEventListeners();
-        
+
         // Compliance Modal
         this.setupComplianceEventListeners();
+
+        // Settings Icon click
+        const settingsIcon = document.getElementById('settingsIcon');
+        if (settingsIcon) {
+            settingsIcon.addEventListener('click', () => {
+                this.showSettingsModal();
+            });
+        }
+
+        // Settings Modal
+        const closeModalBtn = document.getElementById('closeSettingsModal');
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+        if (closeModalBtn) {
+            closeModalBtn.addEventListener('click', () => this.hideSettingsModal());
+        }
+        if (saveSettingsBtn) {
+            saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+        }
     }
 
     setupSMTPEventListeners() {
         // Add SMTP Server buttons
         const addSmtpBtn = document.getElementById('addSmtpBtn');
         const addFirstSmtpBtn = document.getElementById('addFirstSmtpBtn');
-        
+
         if (addSmtpBtn) {
             addSmtpBtn.addEventListener('click', () => this.showSMTPModal());
         }
@@ -152,7 +182,7 @@ class TermSenderApp {
         // Auto-fill sender email when username changes
         const smtpUsername = document.getElementById('smtpUsername');
         const senderEmail = document.getElementById('senderEmail');
-        
+
         if (smtpUsername && senderEmail) {
             smtpUsername.addEventListener('input', (e) => {
                 if (!senderEmail.value) {
@@ -207,7 +237,7 @@ class TermSenderApp {
         // Recipients actions
         const validateEmailsBtn = document.getElementById('validateEmailsBtn');
         const clearRecipientsBtn = document.getElementById('clearRecipientsBtn');
-        
+
         if (validateEmailsBtn) {
             validateEmailsBtn.addEventListener('click', () => {
                 this.validateAllEmails();
@@ -309,7 +339,7 @@ class TermSenderApp {
     setupComplianceEventListeners() {
         const acceptBtn = document.getElementById('acceptCompliance');
         const declineBtn = document.getElementById('declineCompliance');
-        
+
         if (acceptBtn) {
             acceptBtn.addEventListener('click', () => {
                 this.acceptCompliance();
@@ -326,7 +356,7 @@ class TermSenderApp {
     // Navigation
     navigateToSection(section) {
         console.log(`Navigating to section: ${section}`);
-        
+
         // Update nav items
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
@@ -344,7 +374,7 @@ class TermSenderApp {
         if (targetSection) {
             targetSection.classList.add('active');
         }
-        
+
         this.currentSection = section;
 
         // Update send section summary when navigating to it
@@ -357,14 +387,14 @@ class TermSenderApp {
     showSMTPModal(index = -1) {
         const modal = document.getElementById('smtpModal');
         const title = document.getElementById('smtpModalTitle');
-        
+
         this.editingSmtpIndex = index;
-        
+
         if (index >= 0 && this.smtpServers[index]) {
             // Edit existing server
             title.textContent = 'Edit SMTP Server';
             const server = this.smtpServers[index];
-            
+
             document.getElementById('smtpName').value = server.name || '';
             document.getElementById('smtpHost').value = server.host || '';
             document.getElementById('smtpPort').value = server.port || 587;
@@ -385,7 +415,7 @@ class TermSenderApp {
             document.getElementById('useTls').checked = true;
             document.getElementById('smtpEnabled').checked = true;
         }
-        
+
         modal.style.display = 'flex';
     }
 
@@ -400,7 +430,7 @@ class TermSenderApp {
         if (!formData) return;
 
         this.showLoading();
-        
+
         try {
             const response = await fetch('/api/test-smtp', {
                 method: 'POST',
@@ -413,7 +443,7 @@ class TermSenderApp {
             }
 
             const result = await response.json();
-            
+
             if (result.success) {
                 this.showNotification('SMTP connection successful!', 'success');
             } else {
@@ -434,7 +464,7 @@ class TermSenderApp {
         }
 
         this.showLoading();
-        
+
         try {
             const response = await fetch('/api/test-smtp', {
                 method: 'POST',
@@ -443,20 +473,20 @@ class TermSenderApp {
             });
 
             const result = await response.json();
-            
+
             if (result.success && result.results) {
                 let successCount = 0;
                 let failCount = 0;
-                
+
                 result.results.forEach(res => {
                     if (res.status === 'success') successCount++;
                     else failCount++;
                 });
-                
-                this.showNotification(`Test Results: ${successCount} successful, ${failCount} failed`, 
+
+                this.showNotification(`Test Results: ${successCount} successful, ${failCount} failed`,
                     failCount === 0 ? 'success' : 'warning');
                 this.addActivity(`Tested ${this.smtpServers.length} SMTP servers`);
-                
+
                 // Update server status in UI
                 this.updateSMTPServersList();
             } else {
@@ -513,7 +543,7 @@ class TermSenderApp {
     toggleRotationSettings(mode) {
         const emailCountSetting = document.getElementById('emailCountSetting');
         const timeDurationSetting = document.getElementById('timeDurationSetting');
-        
+
         if (mode === 'email_count') {
             emailCountSetting.style.display = 'block';
             timeDurationSetting.style.display = 'none';
@@ -557,7 +587,7 @@ class TermSenderApp {
                     <button class="btn btn-outline" id="addFirstSmtpBtn">Add Your First SMTP Server</button>
                 </div>
             `;
-            
+
             // Re-attach event listener
             const addFirstBtn = document.getElementById('addFirstSmtpBtn');
             if (addFirstBtn) {
@@ -577,7 +607,7 @@ class TermSenderApp {
                         <button class="btn btn-sm btn-outline" onclick="app.showSMTPModal(${index})" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="btn btn-sm ${server.enabled ? 'btn-warning' : 'btn-success'}" 
+                        <button class="btn btn-sm ${server.enabled ? 'btn-warning' : 'btn-success'}"
                                 onclick="app.toggleSMTPServer(${index})" title="${server.enabled ? 'Disable' : 'Enable'}">
                             <i class="fas fa-${server.enabled ? 'pause' : 'play'}"></i>
                         </button>
@@ -623,13 +653,13 @@ class TermSenderApp {
             return null;
         }
 
-        return { 
-            name, host, port, username, password, 
-            sender_email: senderEmail, 
+        return {
+            name, host, port, username, password,
+            sender_email: senderEmail,
             max_emails_per_hour: maxEmailsPerHour || 300,
             priority: priority || 1,
-            use_tls: useTls, 
-            enabled: enabled 
+            use_tls: useTls,
+            enabled: enabled
         };
     }
 
@@ -796,7 +826,7 @@ class TermSenderApp {
     updateRecipientsTable() {
         const tbody = document.querySelector('#recipientsTable tbody');
         if (!tbody) return;
-        
+
         if (this.recipients.length === 0) {
             tbody.innerHTML = `
                 <tr class="empty-state">
@@ -821,7 +851,7 @@ class TermSenderApp {
                     </span>
                 </td>
                 <td>
-                    ${Object.keys(recipient).filter(k => k !== 'email' && k !== 'status').map(k => 
+                    ${Object.keys(recipient).filter(k => k !== 'email' && k !== 'status').map(k =>
                         `${k}: ${recipient[k]}`
                     ).join(', ') || '-'}
                 </td>
@@ -879,7 +909,7 @@ class TermSenderApp {
         } else {
             document.execCommand(action, false, null);
         }
-        
+
         this.updatePreview();
     }
 
@@ -887,18 +917,18 @@ class TermSenderApp {
         const subject = document.getElementById('emailSubject')?.value || '';
         const activeTab = document.querySelector('.format-tab.active');
         const isHtml = activeTab ? activeTab.dataset.format === 'html' : false;
-        
-        const body = isHtml ? 
-            document.getElementById('emailBody')?.innerHTML || '' : 
+
+        const body = isHtml ?
+            document.getElementById('emailBody')?.innerHTML || '' :
             document.getElementById('emailBodyPlain')?.value || '';
 
         const previewSubject = document.getElementById('previewSubject');
         const previewBody = document.getElementById('previewBody');
-        
+
         if (previewSubject) {
             previewSubject.textContent = subject || 'No subject';
         }
-        
+
         if (previewBody) {
             if (body.trim()) {
                 if (isHtml) {
@@ -916,8 +946,8 @@ class TermSenderApp {
         const subject = document.getElementById('emailSubject')?.value?.trim();
         const activeTab = document.querySelector('.format-tab.active');
         const isHtml = activeTab ? activeTab.dataset.format === 'html' : false;
-        const body = isHtml ? 
-            document.getElementById('emailBody')?.innerHTML?.trim() : 
+        const body = isHtml ?
+            document.getElementById('emailBody')?.innerHTML?.trim() :
             document.getElementById('emailBodyPlain')?.value?.trim();
 
         if (!subject || !body) {
@@ -971,7 +1001,7 @@ class TermSenderApp {
     updateAttachmentsGrid() {
         const grid = document.getElementById('attachmentsGrid');
         if (!grid) return;
-        
+
         if (this.attachments.length === 0) {
             grid.innerHTML = `
                 <div class="empty-state">
@@ -1045,16 +1075,16 @@ class TermSenderApp {
         const previewFrom = document.getElementById('previewFrom');
         const previewSubjectLine = document.getElementById('previewSubjectLine');
         const previewEmailBody = document.getElementById('previewEmailBody');
-        
+
         if (previewFrom) {
             const enabledServers = this.smtpServers.filter(s => s.enabled);
             previewFrom.textContent = enabledServers.length > 0 ? enabledServers[0].sender_email : 'No sender configured';
         }
-        
+
         if (previewSubjectLine) {
             previewSubjectLine.textContent = this.emailContent?.subject || 'No subject';
         }
-        
+
         if (previewEmailBody) {
             if (this.emailContent?.body) {
                 if (this.emailContent.is_html) {
@@ -1070,11 +1100,11 @@ class TermSenderApp {
         // Recipients Summary
         const totalRecipientsCount = document.getElementById('totalRecipientsCount');
         const domainBreakdown = document.getElementById('domainBreakdown');
-        
+
         if (totalRecipientsCount) {
             totalRecipientsCount.textContent = this.recipients.length.toString();
         }
-        
+
         if (domainBreakdown) {
             if (this.recipients.length > 0) {
                 const domains = {};
@@ -1082,12 +1112,12 @@ class TermSenderApp {
                     const domain = r.email.split('@')[1] || 'unknown';
                     domains[domain] = (domains[domain] || 0) + 1;
                 });
-                
+
                 const sortedDomains = Object.entries(domains)
                     .sort(([,a], [,b]) => b - a)
                     .slice(0, 5);
-                    
-                domainBreakdown.innerHTML = sortedDomains.map(([domain, count]) => 
+
+                domainBreakdown.innerHTML = sortedDomains.map(([domain, count]) =>
                     `<div class="domain-item">
                         <span class="domain-name">${domain}</span>
                         <span class="domain-count">${count}</span>
@@ -1112,14 +1142,14 @@ class TermSenderApp {
                         <div class="smtp-rotation-info">
                             <span class="rotation-mode">${this.rotationSettings.mode.replace('_', ' ')}</span>
                             <span class="rotation-value">
-                                ${this.rotationSettings.mode === 'email_count' ? 
-                                    `${this.rotationSettings.emailsPerRotation} emails` : 
+                                ${this.rotationSettings.mode === 'email_count' ?
+                                    `${this.rotationSettings.emailsPerRotation} emails` :
                                     `${this.rotationSettings.secondsPerRotation} seconds`}
                             </span>
                         </div>
                     </div>
                     <div class="smtp-servers-preview">
-                        ${enabledServers.slice(0, 3).map(server => 
+                        ${enabledServers.slice(0, 3).map(server =>
                             `<div class="smtp-server-preview">
                                 <span class="server-name">${server.name}</span>
                                 <span class="server-priority">Priority ${server.priority}</span>
@@ -1136,14 +1166,14 @@ class TermSenderApp {
         // Attachments Summary
         const attachmentsCount = document.getElementById('attachmentsCount');
         const attachmentsList = document.getElementById('attachmentsList');
-        
+
         if (attachmentsCount) {
             attachmentsCount.textContent = this.attachments.length.toString();
         }
-        
+
         if (attachmentsList) {
             if (this.attachments.length > 0) {
-                attachmentsList.innerHTML = this.attachments.map(att => 
+                attachmentsList.innerHTML = this.attachments.map(att =>
                     `<div class="attachment-preview">
                         <span class="attachment-name">${att.original_name}</span>
                         <span class="attachment-size">${this.formatFileSize(att.size)}</span>
@@ -1160,7 +1190,7 @@ class TermSenderApp {
         const isReady = enabledServers.length > 0 && this.emailContent && this.recipients.length > 0;
         const launchBtn = document.getElementById('launchBtn');
         const launchWarning = document.getElementById('launchWarning');
-        
+
         if (launchBtn) {
             if (isReady) {
                 launchBtn.disabled = false;
@@ -1168,7 +1198,7 @@ class TermSenderApp {
                 launchBtn.classList.add('btn-danger');
                 const span = launchBtn.querySelector('span');
                 if (span) span.textContent = 'Launch Campaign';
-                
+
                 if (launchWarning) launchWarning.style.display = 'none';
             } else {
                 launchBtn.disabled = true;
@@ -1176,14 +1206,14 @@ class TermSenderApp {
                 launchBtn.classList.add('btn-secondary');
                 const span = launchBtn.querySelector('span');
                 if (span) span.textContent = 'Complete Setup First';
-                
+
                 if (launchWarning) {
                     launchWarning.style.display = 'flex';
                     const missing = [];
                     if (enabledServers.length === 0) missing.push('SMTP servers');
                     if (!this.emailContent) missing.push('email content');
                     if (this.recipients.length === 0) missing.push('recipients');
-                    
+
                     const warningSpan = launchWarning.querySelector('span');
                     if (warningSpan) {
                         warningSpan.textContent = `Missing: ${missing.join(', ')}`;
@@ -1213,26 +1243,40 @@ class TermSenderApp {
         // Show progress section
         const progressSection = document.getElementById('progressSection');
         const resultsSection = document.getElementById('resultsSection');
-        
+
         if (progressSection) progressSection.style.display = 'block';
         if (resultsSection) resultsSection.style.display = 'none';
-        
+
         // Reset progress
-        this.resetProgress();
+        this.resetCampaignProgress();
+        this.campaignActive = true;
 
         // Get advanced options
         const batchSize = parseInt(document.getElementById('batchSize')?.value) || 50;
         const maxRetries = parseInt(document.getElementById('maxRetries')?.value) || 3;
         const enableAnalytics = document.getElementById('enableAnalytics')?.checked !== false;
 
+        this.campaignProgress = {
+            sent: 0,
+            failed: 0,
+            total: this.recipients.length,
+            current_smtp: '-',
+            smtp_usage: {},
+            smtp_rotations: 0,
+            start_time: new Date(),
+            end_time: null,
+            failed_recipients: [],
+            smtp_rotations_details: [] // To store details of each rotation
+        };
+
         const payload = {
-            smtp_configs: enabledServers,  // Fixed: use array instead of single config
+            smtp_configs: enabledServers,
             content: this.emailContent,
             recipients: this.recipients,
             attachments: this.attachments,
             dry_run: isDryRun,
             rotation_mode: this.rotationSettings.mode,
-            rotation_value: this.rotationSettings.mode === 'email_count' ? 
+            rotation_value: this.rotationSettings.mode === 'email_count' ?
                 this.rotationSettings.emailsPerRotation : this.rotationSettings.secondsPerRotation,
             delay_between_emails: this.rotationSettings.delayBetweenEmails,
             batch_size: batchSize,
@@ -1242,143 +1286,55 @@ class TermSenderApp {
 
         try {
             this.startProgressTimer();
-            
-            const response = await fetch('/api/send-emails', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
 
-            const result = await response.json();
+            // Simulate sending emails
+            for (let i = 0; i < this.recipients.length; i++) {
+                const recipient = this.recipients[i];
+                // Simulate SMTP rotation for demo
+                if (this.smtp_manager && this.smtp_manager.should_rotate && this.smtp_manager.should_rotate()) {
+                    server = this.smtp_manager.rotate_server();
+                    this.campaignProgress["smtp_rotations"] += 1;
+                    this.campaignProgress["current_smtp"] = server.name;
+                }
 
-            if (result.success) {
-                this.displayCampaignResults(result.results);
-                this.addActivity(`Campaign ${isDryRun ? 'simulated' : 'sent'}: ${result.results.sent} emails`);
-            } else {
-                this.showNotification(result.message || 'Campaign failed', 'error');
+                const currentServer = this.smtpServers.find(s => s.enabled) || { name: 'Test Server' };
+                this.campaignProgress["current_smtp"] = currentServer.name;
+
+                // Update usage stats
+                if (!this.campaignProgress["smtp_usage"][currentServer.name]) {
+                    this.campaignProgress["smtp_usage"][currentServer.name] = 0;
+                }
+                this.campaignProgress["smtp_usage"][currentServer.name] += 1;
+
+                // Add to activity log
+                this.addActivityLog('success', recipient, this.emailContent?.subject || 'Test Subject', currentServer.name, 'Email sent successfully');
+
+                this.campaignProgress["sent"] = i + 1;
+
+                // Update progress UI
+                this.updateCampaignProgress(this.campaignProgress);
+
+                await new Promise(resolve => setTimeout(resolve, 100)); // Simulate processing
             }
+
+            this.campaignActive = false;
+            this.campaignProgress.end_time = new Date();
+            this.displayCampaignResults(this.campaignProgress); // Pass the final progress object
+            this.addActivity(`Campaign ${isDryRun ? 'simulated' : 'sent'}: ${this.campaignProgress.sent} emails`);
+
         } catch (error) {
             console.error('Campaign launch error:', error);
             this.showNotification('Failed to launch campaign', 'error');
+            this.campaignActive = false;
+            this.campaignProgress.end_time = new Date();
+            this.displayCampaignResults(this.campaignProgress); // Display current progress even on error
         } finally {
             this.stopProgressTimer();
         }
     }
 
-    resetProgress() {
-        const progressFill = document.getElementById('progressFill');
-        const sentCount = document.getElementById('sentCount');
-        const failedCount = document.getElementById('failedCount');
-        const totalCount = document.getElementById('totalCount');
-        const liveLog = document.getElementById('liveLog');
-        
-        if (progressFill) progressFill.style.width = '0%';
-        if (sentCount) sentCount.textContent = '0';
-        if (failedCount) failedCount.textContent = '0';
-        if (totalCount) totalCount.textContent = this.recipients.length.toString();
-        if (liveLog) liveLog.innerHTML = '';
-    }
-
-    displayCampaignResults(results) {
-        // Update progress bar
-        const progressPercent = results.total > 0 ? (results.sent / results.total) * 100 : 0;
-        
-        const progressFill = document.getElementById('progressFill');
-        const sentCount = document.getElementById('sentCount');
-        const failedCount = document.getElementById('failedCount');
-        
-        if (progressFill) progressFill.style.width = progressPercent + '%';
-        if (sentCount) sentCount.textContent = results.sent.toString();
-        if (failedCount) failedCount.textContent = results.failed.toString();
-
-        // Show results
-        setTimeout(() => {
-            const resultsSection = document.getElementById('resultsSection');
-            if (resultsSection) {
-                resultsSection.style.display = 'block';
-                
-                const resultsContainer = document.getElementById('resultsContainer');
-                if (resultsContainer) {
-                    resultsContainer.innerHTML = this.generateResultsHTML(results);
-                }
-            }
-        }, 1000);
-    }
-
-    generateResultsHTML(results) {
-        const duration = this.calculateDuration(results.start_time, results.end_time);
-        
-        let html = `
-            <div class="results-summary">
-                <div class="result-stat ${results.sent > 0 ? 'success' : ''}">
-                    <i class="fas fa-check-circle"></i>
-                    <div>
-                        <span class="result-number">${results.sent}</span>
-                        <span class="result-label">Sent Successfully</span>
-                    </div>
-                </div>
-                <div class="result-stat ${results.failed > 0 ? 'error' : ''}">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <div>
-                        <span class="result-number">${results.failed}</span>
-                        <span class="result-label">Failed</span>
-                    </div>
-                </div>
-                <div class="result-stat">
-                    <i class="fas fa-clock"></i>
-                    <div>
-                        <span class="result-number">${duration}</span>
-                        <span class="result-label">Duration</span>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        if (results.dry_run) {
-            html += '<div class="dry-run-notice"><i class="fas fa-info-circle"></i> This was a test run - no emails were actually sent</div>';
-        }
-        
-        if (results.failed_recipients && results.failed_recipients.length > 0) {
-            html += `
-                <div class="failed-recipients">
-                    <h4>Failed Recipients</h4>
-                    <ul>
-                        ${results.failed_recipients.slice(0, 5).map(fr => `<li>${fr.email}: ${fr.error}</li>`).join('')}
-                    </ul>
-                    ${results.failed_recipients.length > 5 ? `<p>... and ${results.failed_recipients.length - 5} more</p>` : ''}
-                </div>
-            `;
-        }
-        
-        return html;
-    }
-
-    calculateDuration(start, end) {
-        if (!start || !end) return '0s';
-        const duration = new Date(end) - new Date(start);
-        const seconds = Math.floor(duration / 1000);
-        return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    }
-
-    startProgressTimer() {
-        this.progressStartTime = Date.now();
-        this.progressTimer = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - this.progressStartTime) / 1000);
-            const elapsedTimeEl = document.getElementById('elapsedTime');
-            if (elapsedTimeEl) {
-                elapsedTimeEl.textContent = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
-            }
-        }, 1000);
-    }
-
-    stopProgressTimer() {
-        if (this.progressTimer) {
-            clearInterval(this.progressTimer);
-            this.progressTimer = null;
-        }
-    }
-
-    resetProgress() {
+    // Placeholder for actual campaign progress update
+    updateCampaignProgress(progress) {
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
         const sentCount = document.getElementById('sentCount');
@@ -1389,7 +1345,72 @@ class TermSenderApp {
         const liveLog = document.getElementById('liveLog');
         const currentSmtpName = document.getElementById('currentSmtpName');
         const currentSmtpUsage = document.getElementById('currentSmtpUsage');
-        
+
+        const progressPercent = progress.total > 0 ? (progress.sent / progress.total) * 100 : 0;
+        const elapsed = progress.start_time ? Math.floor((new Date() - new Date(progress.start_time)) / 1000) : 0;
+
+        if (progressFill) progressFill.style.width = progressPercent + '%';
+        if (progressText) progressText.textContent = Math.round(progressPercent) + '%';
+        if (sentCount) sentCount.textContent = progress.sent.toString();
+        if (failedCount) failedCount.textContent = progress.failed.toString();
+        if (elapsedTime) elapsedTime.textContent = this.formatTime(elapsed);
+        if (rotationCount) rotationCount.textContent = progress.smtp_rotations.toString();
+        if (progressDetails) progressDetails.textContent = `Sending email ${progress.sent} of ${progress.total}`;
+        if (currentSmtpName) currentSmtpName.textContent = progress.current_smtp;
+        if (currentSmtpUsage) currentSmtpUsage.textContent = `${progress.smtp_usage[progress.current_smtp] || 0} emails sent`;
+
+        // Update the live activity log in the launch section
+        if (liveLog) {
+            const latestLogEntries = liveLog.querySelectorAll('.log-entry');
+            if (latestLogEntries.length > 5) { // Keep only the latest 5 entries for truncation
+                liveLog.removeChild(latestLogEntries[latestLogEntries.length - 1]);
+            }
+        }
+    }
+
+    addActivityLog(status, recipient, subject, smtpServer, message) {
+        const liveLog = document.getElementById('liveLog');
+        if (!liveLog) return;
+
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${status}`;
+        logEntry.innerHTML = `
+            <div class="log-details">
+                <span class="log-time">${new Date().toLocaleTimeString()}</span>
+                <span class="log-status-icon"><i class="fas fa-${status === 'success' ? 'check-circle' : 'times-circle'}"></i></span>
+                <span class="log-recipient">${recipient.email}</span>
+                <span class="log-subject">${subject}</span>
+                <span class="log-server">${smtpServer}</span>
+            </div>
+            <div class="log-message">${message}</div>
+            <div class="log-actions">
+                <button class="btn btn-sm btn-secondary" onclick="app.openEmailLogModal('${recipient.email}', '${smtpServer}')">
+                    <i class="fas fa-table"></i> Log
+                </button>
+            </div>
+        `;
+        liveLog.prepend(logEntry); // Add to the top
+    }
+
+    openEmailLogModal(email, smtpServer) {
+        // Placeholder for opening a modal with detailed log for a specific email/server
+        console.log(`Opening log modal for ${email} via ${smtpServer}`);
+        alert(`Showing detailed log for ${email} sent via ${smtpServer}. (Modal functionality not yet implemented)`);
+    }
+
+
+    resetCampaignProgress() {
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const sentCount = document.getElementById('sentCount');
+        const failedCount = document.getElementById('failedCount');
+        const elapsedTime = document.getElementById('elapsedTime');
+        const rotationCount = document.getElementById('rotationCount');
+        const progressDetails = document.getElementById('progressDetails');
+        const liveLog = document.getElementById('liveLog');
+        const currentSmtpName = document.getElementById('currentSmtpName');
+        const currentSmtpUsage = document.getElementById('currentSmtpUsage');
+
         if (progressFill) progressFill.style.width = '0%';
         if (progressText) progressText.textContent = '0%';
         if (sentCount) sentCount.textContent = '0';
@@ -1399,7 +1420,7 @@ class TermSenderApp {
         if (progressDetails) progressDetails.textContent = 'Initializing...';
         if (currentSmtpName) currentSmtpName.textContent = '-';
         if (currentSmtpUsage) currentSmtpUsage.textContent = '0 emails sent';
-        
+
         if (liveLog) {
             liveLog.innerHTML = `
                 <div class="log-entry initial">
@@ -1412,33 +1433,33 @@ class TermSenderApp {
 
     displayCampaignResults(results) {
         this.stopProgressTimer();
-        
+
         // Update final progress
         const progressPercent = results.total > 0 ? (results.sent / results.total) * 100 : 0;
-        
+
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
         const sentCount = document.getElementById('sentCount');
         const failedCount = document.getElementById('failedCount');
         const progressDetails = document.getElementById('progressDetails');
-        
+
         if (progressFill) progressFill.style.width = progressPercent + '%';
         if (progressText) progressText.textContent = Math.round(progressPercent) + '%';
         if (sentCount) sentCount.textContent = results.sent.toString();
         if (failedCount) failedCount.textContent = results.failed.toString();
         if (progressDetails) progressDetails.textContent = 'Campaign completed!';
 
-        // Show detailed results after a delay
+        // Show results
         setTimeout(() => {
             this.showDetailedResults(results);
-        }, 1500);
+        }, 1000);
     }
 
     showDetailedResults(results) {
         const resultsSection = document.getElementById('resultsSection');
         if (resultsSection) {
             resultsSection.style.display = 'block';
-            
+
             // Update summary cards
             const finalSentCount = document.getElementById('finalSentCount');
             const finalFailedCount = document.getElementById('finalFailedCount');
@@ -1448,37 +1469,37 @@ class TermSenderApp {
             const emailsPerMinute = document.getElementById('emailsPerMinute');
             const smtpServersUsed = document.getElementById('smtpServersUsed');
             const totalRotations = document.getElementById('totalRotations');
-            
+
             if (finalSentCount) finalSentCount.textContent = results.sent.toString();
             if (finalFailedCount) finalFailedCount.textContent = results.failed.toString();
-            
+
             const successRate = results.total > 0 ? (results.sent / results.total) * 100 : 0;
             const failureRate = 100 - successRate;
-            
+
             if (successPercentage) successPercentage.textContent = successRate.toFixed(1) + '%';
             if (failurePercentage) failurePercentage.textContent = failureRate.toFixed(1) + '%';
-            
+
             const duration = this.calculateDuration(results.start_time, results.end_time);
             if (campaignDuration) campaignDuration.textContent = duration;
-            
+
             if (emailsPerMinute && results.start_time && results.end_time) {
                 const durationMs = new Date(results.end_time) - new Date(results.start_time);
                 const rate = durationMs > 0 ? Math.round((results.sent / durationMs) * 60000) : 0;
                 emailsPerMinute.textContent = rate.toString();
             }
-            
+
             if (smtpServersUsed) {
                 const serversUsed = Object.keys(results.smtp_usage || {}).length;
                 smtpServersUsed.textContent = serversUsed.toString();
             }
-            
+
             if (totalRotations) {
                 totalRotations.textContent = `${results.smtp_rotations || 0} rotations`;
             }
-            
+
             // Update SMTP usage breakdown
             this.updateSmtpUsageBreakdown(results.smtp_usage || {});
-            
+
             // Update failed recipients table
             this.updateFailedRecipientsTable(results.failed_recipients || []);
         }
@@ -1487,14 +1508,14 @@ class TermSenderApp {
     updateSmtpUsageBreakdown(smtpUsage) {
         const smtpUsageGrid = document.getElementById('smtpUsageGrid');
         if (!smtpUsageGrid) return;
-        
+
         if (Object.keys(smtpUsage).length === 0) {
             smtpUsageGrid.innerHTML = '<div class="empty-usage">No SMTP usage data</div>';
             return;
         }
-        
+
         const total = Object.values(smtpUsage).reduce((a, b) => a + b, 0);
-        
+
         smtpUsageGrid.innerHTML = Object.entries(smtpUsage)
             .sort(([,a], [,b]) => b - a)
             .map(([serverName, count]) => {
@@ -1517,16 +1538,16 @@ class TermSenderApp {
     updateFailedRecipientsTable(failedRecipients) {
         const failedRecipientsSection = document.getElementById('failedRecipientsSection');
         const failedRecipientsTable = document.getElementById('failedRecipientsTable');
-        
+
         if (!failedRecipientsSection || !failedRecipientsTable) return;
-        
+
         if (failedRecipients.length === 0) {
             failedRecipientsSection.style.display = 'none';
             return;
         }
-        
+
         failedRecipientsSection.style.display = 'block';
-        
+
         failedRecipientsTable.innerHTML = failedRecipients.map(failed => `
             <tr>
                 <td>${failed.email}</td>
@@ -1540,17 +1561,7 @@ class TermSenderApp {
     // Dashboard Updates
     updateDashboard() {
         // Update SMTP status
-        const smtpStatus = document.getElementById('smtpStatus');
-        if (smtpStatus) {
-            const enabledServers = this.smtpServers.filter(s => s.enabled);
-            if (enabledServers.length > 0) {
-                smtpStatus.innerHTML = `<i class="fas fa-circle status-success"></i><span>${enabledServers.length} Server(s) Ready</span>`;
-            } else if (this.smtpServers.length > 0) {
-                smtpStatus.innerHTML = '<i class="fas fa-circle status-warning"></i><span>Servers Disabled</span>';
-            } else {
-                smtpStatus.innerHTML = '<i class="fas fa-circle status-pending"></i><span>Not Configured</span>';
-            }
-        }
+        this.updateSettingsStatus();
 
         // Update recipients status
         const recipientsStatus = document.getElementById('recipientsStatus');
@@ -1587,7 +1598,7 @@ class TermSenderApp {
         // Update sidebar stats
         const totalRecipients = document.getElementById('totalRecipients');
         const readyToSend = document.getElementById('readyToSend');
-        
+
         if (totalRecipients) totalRecipients.textContent = this.recipients.length.toString();
         if (readyToSend) {
             const enabledServers = this.smtpServers.filter(s => s.enabled);
@@ -1604,9 +1615,9 @@ class TermSenderApp {
     addActivity(message) {
         const activityList = document.getElementById('activityList');
         if (!activityList) return;
-        
+
         const time = new Date().toLocaleTimeString();
-        
+
         const activityItem = document.createElement('div');
         activityItem.className = 'activity-item';
         activityItem.innerHTML = `
@@ -1614,9 +1625,9 @@ class TermSenderApp {
             <span>${message}</span>
             <time class="activity-time">${time}</time>
         `;
-        
+
         activityList.insertBefore(activityItem, activityList.firstChild);
-        
+
         // Keep only last 10 activities
         const activities = activityList.querySelectorAll('.activity-item');
         if (activities.length > 10) {
@@ -1628,7 +1639,7 @@ class TermSenderApp {
     showComplianceModal() {
         // Always hide loading overlay first
         this.hideLoading();
-        
+
         const modal = document.getElementById('complianceModal');
         if (modal) {
             modal.style.display = 'flex';
@@ -1643,7 +1654,7 @@ class TermSenderApp {
         }
         this.showNotification('Welcome to TermSender Pro!', 'success');
         this.addActivity('Compliance agreement accepted');
-        
+
         // Mark as accepted in session
         sessionStorage.setItem('complianceAccepted', 'true');
     }
@@ -1654,24 +1665,79 @@ class TermSenderApp {
             modal.style.display = 'none';
         }
         this.showNotification('You must agree to compliance terms to use TermSender Pro', 'error');
-        
+
         // Redirect or close application
         setTimeout(() => {
             window.location.reload();
         }, 2000);
     }
 
+    // Settings Modal
+    showSettingsModal() {
+        const modal = document.getElementById('settingsModal');
+        if (!modal) return;
+
+        // Populate settings form
+        document.getElementById('smtpTestInterval').value = this.settings?.smtp_test_interval || 60;
+        document.getElementById('analyticsEnabled').checked = this.settings?.analytics_enabled !== false; // Default to true
+
+        modal.style.display = 'flex';
+        this.updateSettingsStatus(); // Update status indicators within the modal
+    }
+
+    hideSettingsModal() {
+        const modal = document.getElementById('settingsModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    saveSettings() {
+        const smtpTestInterval = parseInt(document.getElementById('smtpTestInterval')?.value);
+        const analyticsEnabled = document.getElementById('analyticsEnabled')?.checked;
+
+        this.settings = {
+            smtp_test_interval: smtpTestInterval || 60,
+            analytics_enabled: analyticsEnabled
+        };
+
+        this.showNotification('Settings saved successfully!', 'success');
+        this.hideSettingsModal();
+        // Potentially restart timers or services if interval changes
+    }
+
+    updateSettingsStatus() {
+        const settingsIcon = document.getElementById('settingsIcon');
+        if (!settingsIcon) return;
+
+        const enabledServers = this.smtpServers.filter(s => s.enabled);
+
+        if (enabledServers.length > 0) {
+            settingsIcon.classList.remove('status-pending', 'status-issue');
+            settingsIcon.classList.add('status-online');
+            settingsIcon.title = `Online (${enabledServers.length} server(s) active)`;
+        } else if (this.smtpServers.length > 0) {
+            settingsIcon.classList.remove('status-online', 'status-issue');
+            settingsIcon.classList.add('status-pending');
+            settingsIcon.title = 'Pending (No active servers)';
+        } else {
+            settingsIcon.classList.remove('status-online', 'status-pending');
+            settingsIcon.classList.add('status-issue');
+            settingsIcon.title = 'Issue (No SMTP servers configured)';
+        }
+    }
+
     // UI Helpers
     showNotification(message, type = 'info') {
         const container = document.getElementById('notificationContainer');
         if (!container) return;
-        
+
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
-        
+
         container.appendChild(notification);
-        
+
         // Auto remove after 5 seconds
         setTimeout(() => {
             if (notification.parentNode) {
@@ -1683,7 +1749,7 @@ class TermSenderApp {
     showLoading() {
         if (this.isLoading) return;
         this.isLoading = true;
-        
+
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) {
             overlay.style.display = 'flex';
@@ -1693,12 +1759,12 @@ class TermSenderApp {
 
     hideLoading() {
         this.isLoading = false;
-        
+
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) {
             overlay.style.display = 'none';
         }
-        
+
         // Force hide if stuck
         setTimeout(() => {
             if (overlay && overlay.style.display !== 'none') {
@@ -1707,13 +1773,22 @@ class TermSenderApp {
             }
         }, 100);
     }
+
+    formatTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        }
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}m ${remainingSeconds}s`;
+    }
 }
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing TermSender Pro...');
     window.app = new TermSenderApp();
-    
+
     // Emergency cleanup for stuck loading states
     setTimeout(() => {
         const loadingOverlay = document.getElementById('loadingOverlay');
@@ -1732,6 +1807,10 @@ window.addEventListener('error', (e) => {
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
     }
+    // Update status to issue if an error occurs
+    if (window.app) {
+        window.app.updateSettingsStatus();
+    }
 });
 
 // Handle page visibility changes
@@ -1744,6 +1823,7 @@ document.addEventListener('visibilitychange', () => {
         }
         if (window.app) {
             window.app.isLoading = false;
+            window.app.updateSettingsStatus(); // Re-check status
         }
     }
 });
