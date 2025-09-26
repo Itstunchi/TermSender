@@ -26,8 +26,52 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 # Import our enhanced classes
-from config_manager import config_manager
 from termsender import SMTPRotationManager, AnalyticsManager, SMTPServer
+
+# Simple config manager implementation
+class SimpleConfigManager:
+    def get_smtp_servers(self):
+        try:
+            smtp_file = Path('config/smtp_servers.json')
+            if smtp_file.exists():
+                with open(smtp_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get('smtp_servers', [])
+            return []
+        except Exception:
+            return []
+    
+    def get_email_lists(self):
+        try:
+            lists_file = Path('config/email_lists.json')
+            if lists_file.exists():
+                with open(lists_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get('email_lists', {})
+            return {}
+        except Exception:
+            return {}
+    
+    def get_email_templates(self):
+        try:
+            templates_file = Path('config/email_templates.json')
+            if templates_file.exists():
+                with open(templates_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get('email_templates', {})
+            return {}
+        except Exception:
+            return {}
+    
+    def get_system_status(self):
+        return {
+            "smtp_servers_count": len(self.get_smtp_servers()),
+            "email_lists_count": len(self.get_email_lists()),
+            "templates_count": len(self.get_email_templates()),
+            "status": "ready"
+        }
+
+config_manager = SimpleConfigManager()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret-key-change-in-production')
@@ -411,7 +455,7 @@ def get_analytics():
         return jsonify({"success": False, "message": str(e)})
 
 @app.route('/api/config/smtp-servers', methods=['GET'])
-def get_smtp_servers():
+def get_config_smtp_servers():
     """Get configured SMTP servers"""
     try:
         smtp_servers = config_manager.get_smtp_servers()
@@ -568,7 +612,7 @@ def cleanup_files():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/get-smtp-servers', methods=['GET'])
-def get_smtp_servers():
+def api_get_smtp_servers():
     try:
         smtp_file = os.path.join('config', 'smtp_servers.json')
         if os.path.exists(smtp_file):

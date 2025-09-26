@@ -7,7 +7,7 @@ channel = "stable-25_05"
 packages = ["glibcLocales"]
 
 [workflows]
-runButton = "Project"
+runButton = "Run TermSender"
 
 [[workflows.workflow]]
 name = "Project"
@@ -29,6 +29,15 @@ outputType = "webview"
 task = "shell.exec"
 args = "python app.py"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Run TermSender"
+author = 47995421
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
 
 [[ports]]
 localPort = 5000
