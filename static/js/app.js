@@ -19,12 +19,19 @@ class TermSenderApp {
 
     init() {
         console.log('Initializing TermSender Pro...');
+        
+        // Make sure loading is hidden initially
+        this.hideLoading();
+        
         this.setupEventListeners();
         
         // Only show compliance modal if not already accepted
         const complianceAccepted = sessionStorage.getItem('complianceAccepted');
         if (!complianceAccepted) {
-            this.showComplianceModal();
+            // Small delay to ensure DOM is ready
+            setTimeout(() => {
+                this.showComplianceModal();
+            }, 100);
         }
         
         this.updateDashboard();
@@ -309,16 +316,20 @@ class TermSenderApp {
                 body: JSON.stringify(formData)
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
             const result = await response.json();
             
             if (result.success) {
                 this.showNotification('SMTP connection successful!', 'success');
             } else {
-                this.showNotification(result.message, 'error');
+                this.showNotification(result.message || 'Unknown error occurred', 'error');
             }
         } catch (error) {
             console.error('SMTP test error:', error);
-            this.showNotification('Failed to test SMTP connection', 'error');
+            this.showNotification(`Failed to test SMTP connection: ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
@@ -383,11 +394,26 @@ class TermSenderApp {
 
         this.showLoading();
 
+        // Add timeout protection
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+            this.hideLoading();
+            this.showNotification('Request timed out. Please try again.', 'error');
+        }, 30000); // 30 second timeout
+
         try {
             const response = await fetch('/api/upload-csv', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
 
             const result = await response.json();
 
@@ -398,11 +424,16 @@ class TermSenderApp {
                 this.showNotification(result.message, 'success');
                 this.addActivity(`Imported ${result.total_valid} recipients from CSV`);
             } else {
-                this.showNotification(result.message, 'error');
+                this.showNotification(result.message || 'Upload failed', 'error');
             }
         } catch (error) {
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                console.log('Request was aborted');
+                return; // Don't show error message as we already showed timeout message
+            }
             console.error('CSV upload error:', error);
-            this.showNotification('Failed to upload CSV file', 'error');
+            this.showNotification(`Failed to upload CSV file: ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
@@ -1008,13 +1039,13 @@ class TermSenderApp {
 
     // Compliance Modal
     showComplianceModal() {
-        // Hide loading overlay if it's showing
+        // Always hide loading overlay first
         this.hideLoading();
         
         const modal = document.getElementById('complianceModal');
         if (modal) {
             modal.style.display = 'flex';
-            modal.style.zIndex = '1003'; // Ensure it's above everything
+            modal.style.zIndex = '1004'; // Ensure it's above loading overlay
         }
     }
 
@@ -1069,6 +1100,7 @@ class TermSenderApp {
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) {
             overlay.style.display = 'flex';
+            overlay.style.zIndex = '1001';
         }
     }
 
@@ -1079,6 +1111,14 @@ class TermSenderApp {
         if (overlay) {
             overlay.style.display = 'none';
         }
+        
+        // Force hide if stuck
+        setTimeout(() => {
+            if (overlay && overlay.style.display !== 'none') {
+                overlay.style.display = 'none';
+                this.isLoading = false;
+            }
+        }, 100);
     }
 }
 
@@ -1086,9 +1126,37 @@ class TermSenderApp {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing TermSender Pro...');
     window.app = new TermSenderApp();
+    
+    // Emergency cleanup for stuck loading states
+    setTimeout(() => {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay && loadingOverlay.style.display !== 'none') {
+            loadingOverlay.style.display = 'none';
+            console.log('Emergency cleanup: Forced loading overlay to hide');
+        }
+    }, 5000);
 });
 
 // Additional error handling
 window.addEventListener('error', (e) => {
     console.error('JavaScript error:', e.error);
+    // Hide loading on any JavaScript error
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+});
+
+// Handle page visibility changes
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Force hide loading when page becomes visible again
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+        }
+        if (window.app) {
+            window.app.isLoading = false;
+        }
+    }
 });
